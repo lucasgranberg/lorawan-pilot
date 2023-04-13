@@ -8,8 +8,9 @@ use embassy_stm32::dma::NoDma;
 use embassy_stm32::interrupt::{Interrupt, InterruptExt, SUBGHZ_RADIO};
 use embassy_stm32::subghz::{
     CalibrateImage, CfgIrq, CodingRate, Error, HeaderType, HseTrim, Irq, LoRaBandwidth,
-    LoRaModParams, LoRaPacketParams, LoRaSyncWord, Ocp, PaConfig, PacketType, RegMode, RfFreq,
-    SpreadingFactor as SF, StandbyClk, Status, SubGhz, TcxoMode, TcxoTrim, Timeout, TxParams,
+    LoRaModParams, LoRaPacketParams, LoRaSyncWord, Ocp, PaConfig, PaSel, PacketType, RegMode,
+    RfFreq, SpreadingFactor as SF, StandbyClk, Status, SubGhz, TcxoMode, TcxoTrim, Timeout,
+    TxParams,
 };
 use embassy_sync::waitqueue::AtomicWaker;
 use lorawan::device::radio::types::{Bandwidth, RfConfig, RxQuality, SpreadingFactor, TxConfig};
@@ -66,6 +67,32 @@ impl<'d, RS: RadioSwitch> SubGhzRadio<'d, RS> {
 
         self.radio
             .set_rf_frequency(&RfFreq::from_frequency(config.rf.frequency))?;
+
+        let pa_config: PaConfig = match config.pw {
+            0..=14 => PaConfig::new()
+                .set_pa_duty_cycle(0x4)
+                .set_hp_max(0x0)
+                .set_pa(PaSel::Lp),
+            15 => PaConfig::new()
+                .set_pa_duty_cycle(0x2)
+                .set_hp_max(0x2)
+                .set_pa(PaSel::Hp),
+            16 => PaConfig::new()
+                .set_pa_duty_cycle(0x2)
+                .set_hp_max(0x3)
+                .set_pa(PaSel::Hp),
+            _ => {
+                return Err(RadioError);
+            }
+        };
+
+        let radio_config = SubGhzRadioConfig {
+            reg_mode: RegMode::Smps,
+            calibrate_image: CalibrateImage::ISM_863_870,
+            pa_config,
+            tx_params: TxParams::new().set_power(config.pw),
+        };
+        configure_radio(&mut self.radio, radio_config)?;
 
         self.set_lora_mod_params(config.rf)?;
 

@@ -172,7 +172,7 @@ impl<'a> Device for LoraDevice<'a> {
         &mut self.non_volatile_store
     }
 
-    fn max_eirp() -> i8 {
+    fn max_eirp() -> u8 {
         22
     }
 
