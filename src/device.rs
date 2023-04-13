@@ -13,6 +13,7 @@ use embassy_stm32::{
 use lorawan::device::non_volatile_store::NonVolatileStore;
 use lorawan::device::Device;
 use lorawan::encoding::keys::AES128;
+use lorawan::mac::mac_1_0_4::region::eu868::Eu868;
 use lorawan::mac::mac_1_0_4::region::Region;
 use lorawan::mac::mac_1_0_4::{Configuration, Credentials, MacDevice};
 
@@ -33,18 +34,12 @@ pub struct LoraDevice<'d> {
     configuration: Configuration,
 }
 impl<'a> LoraDevice<'a> {
-    fn default_credentials() -> Credentials {
-        pub const DEVICE_ID_PTR: *const u8 = 0x1FFF_7580 as _;
-        let dev_eui: [u8; 8] = unsafe { *DEVICE_ID_PTR.cast::<[u8; 8]>() };
-        let app_eui: [u8; 8] = [0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01];
-        let app_key: [u8; 16] = [
-            0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6, 0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF,
-            0x4F, 0x3C,
-        ];
-        let app_key = AES128(app_key);
-        Credentials::new(app_eui, dev_eui, app_key)
-    }
-    pub fn new(peripherals: embassy_stm32::Peripherals) -> Self {
+    pub fn new(
+        peripherals: embassy_stm32::Peripherals,
+        app_eui: [u8; 8],
+        dev_eui: [u8; 8],
+        app_key: AES128,
+    ) -> Self {
         let radio = {
             let subghz = SubGhz::new(peripherals.SUBGHZSPI, NoDma, NoDma);
             let rfs = RadioSwitch::new(
@@ -61,16 +56,31 @@ impl<'a> LoraDevice<'a> {
 
             SubGhzRadio::new(subghz, rfs, interrupt::take!(SUBGHZ_RADIO), radio_config).unwrap()
         };
+        let mut non_volatile_store = DeviceNonVolatileStore {
+            flash: peripherals.FLASH,
+            buf: [0xFF; 256],
+        };
+        let hydrate_res = <Self as MacDevice<Eu868>>::hydrate_from_non_volatile(
+            &mut non_volatile_store,
+            app_eui,
+            dev_eui,
+            app_key,
+        );
+        match hydrate_res {
+            Ok(_) => defmt::info!("credentials and configuration loaded from non volatile"),
+            Err(_) => defmt::info!("credentials and configuration not found in non volatile"),
+        };
+        let (configuration, credentials) = hydrate_res.unwrap_or((
+            Default::default(),
+            Credentials::new(app_eui, dev_eui, app_key),
+        ));
         let ret = Self {
             rng: DeviceRng(Rng::new(peripherals.RNG)),
             radio,
             timer: LoraTimer::new(),
-            non_volatile_store: DeviceNonVolatileStore {
-                flash: peripherals.FLASH,
-                buf: [0xFF; 256],
-            },
-            credentials: Self::default_credentials(),
-            configuration: Default::default(),
+            non_volatile_store: non_volatile_store,
+            credentials: credentials,
+            configuration: configuration,
         };
         ret
     }

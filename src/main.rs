@@ -8,9 +8,10 @@ use embassy_executor::Spawner;
 use embassy_stm32::pac;
 use embassy_time::Duration;
 use lorawan::device::radio::types::RxQuality;
+use lorawan::encoding::keys::AES128;
 use lorawan::mac::mac_1_0_4::region::channel_plan::DynamicChannelPlan;
 use lorawan::mac::mac_1_0_4::region::eu868::Eu868;
-use lorawan::mac::mac_1_0_4::{Mac, MacDevice};
+use lorawan::mac::mac_1_0_4::Mac;
 use lorawan::mac::Mac as _;
 
 mod device;
@@ -34,11 +35,15 @@ async fn main(_spawner: Spawner) {
     let peripherals = embassy_stm32::init(config);
 
     unsafe { pac::RCC.ccipr().modify(|w| w.set_rngsel(0b01)) }
-    let mut device = LoraDevice::new(peripherals);
-    match <LoraDevice<'_> as MacDevice<Eu868>>::hydrate_from_non_volatile(&mut device) {
-        Ok(_) => defmt::info!("credentials and configuration loaded from non volatile"),
-        Err(_) => defmt::info!("credentials and configuration not found in non volatile"),
-    };
+    pub const DEVICE_ID_PTR: *const u8 = 0x1FFF_7580 as _;
+    let dev_eui: [u8; 8] = unsafe { *DEVICE_ID_PTR.cast::<[u8; 8]>() };
+    let app_eui: [u8; 8] = [0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01];
+    let app_key: [u8; 16] = [
+        0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6, 0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F,
+        0x3C,
+    ];
+    let app_key = AES128(app_key);
+    let mut device = LoraDevice::new(peripherals, app_eui, dev_eui, app_key);
     let mut radio_buffer = Default::default();
     let mut mac: Mac<Eu868, LoraDevice<'static>, DynamicChannelPlan<Eu868>> = Mac::new();
     while !mac.is_joined() {
@@ -54,12 +59,12 @@ async fn main(_spawner: Spawner) {
     loop {
         defmt::info!("SENDING");
         let send_res: Result<Option<(usize, RxQuality)>, _> = mac
-            .send(&mut device, &mut radio_buffer, b"PING", 1, true, None)
+            .send(&mut device, &mut radio_buffer, b"PING", 1, false, None)
             .await;
         match send_res {
             Ok(res) => defmt::info!("{:?}", res),
             Err(e) => defmt::error!("{:?}", e),
         }
-        embassy_time::Timer::after(Duration::from_secs(600)).await;
+        embassy_time::Timer::after(Duration::from_secs(300)).await;
     }
 }
