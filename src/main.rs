@@ -46,25 +46,34 @@ async fn main(_spawner: Spawner) {
     let mut device = LoraDevice::new(peripherals, app_eui, dev_eui, app_key);
     let mut radio_buffer = Default::default();
     let mut mac: Mac<Eu868, LoraDevice<'static>, DynamicChannelPlan<Eu868>> = Mac::new();
-    while !mac.is_joined() {
-        defmt::info!("JOINING");
-        match mac.join(&mut device, &mut radio_buffer).await {
-            Ok(res) => defmt::info!("Network joined! {:?}", res),
-            Err(e) => {
-                defmt::error!("Join failed {:?}", e);
-                embassy_time::Timer::after(Duration::from_secs(600)).await;
-            }
-        };
-    }
     loop {
-        defmt::info!("SENDING");
-        let send_res: Result<Option<(usize, RxQuality)>, _> = mac
-            .send(&mut device, &mut radio_buffer, b"PING", 1, false, None)
-            .await;
-        match send_res {
-            Ok(res) => defmt::info!("{:?}", res),
-            Err(e) => defmt::error!("{:?}", e),
+        while !mac.is_joined() {
+            defmt::info!("JOINING");
+            match mac.join(&mut device, &mut radio_buffer).await {
+                Ok(res) => defmt::info!("Network joined! {:?}", res),
+                Err(e) => {
+                    defmt::error!("Join failed {:?}", e);
+                    embassy_time::Timer::after(Duration::from_secs(600)).await;
+                }
+            };
         }
-        embassy_time::Timer::after(Duration::from_secs(300)).await;
+        'sending: while mac.is_joined() {
+            defmt::info!("SENDING");
+            let send_res: Result<Option<(usize, RxQuality)>, _> = mac
+                .send(&mut device, &mut radio_buffer, b"PING", 1, false, None)
+                .await;
+            match send_res {
+                Ok(res) => defmt::info!("{:?}", res),
+                Err(e) => {
+                    defmt::error!("{:?}", e);
+                    if let lorawan::Error::Mac(lorawan::mac::Error::SessionExpired) = e {
+                        defmt::info!("Session expired");
+                        break 'sending;
+                    };
+                }
+            }
+
+            embassy_time::Timer::after(Duration::from_secs(300)).await;
+        }
     }
 }
