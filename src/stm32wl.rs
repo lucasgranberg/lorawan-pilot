@@ -287,15 +287,6 @@ impl From<embassy_stm32::spi::Error> for RadioError {
     }
 }
 
-// impl<'d, RS> Timings for SubGhzRadio<'d, RS> {
-//     fn get_rx_window_offset_ms(&self) -> i32 {
-//         -3
-//     }
-//     fn get_rx_window_duration_ms(&self) -> u32 {
-//         1003
-//     }
-// }
-
 pub trait RadioSwitch {
     fn set_rx(&mut self);
     fn set_tx(&mut self);
