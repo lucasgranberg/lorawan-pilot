@@ -56,6 +56,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bit_field"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc827186963e592360843fb5ba4b973e145841266c1357f7180c43526f2e5b61"
+
+[[package]]
 name = "bitfield"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -307,7 +313,7 @@ dependencies = [
 
 [[package]]
 name = "embassy-executor"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "atomic-polyfill 1.0.2",
  "cortex-m",
@@ -332,8 +338,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "embassy-macros"
+name = "embassy-lora"
 version = "0.1.0"
+dependencies = [
+ "bit_field",
+ "embassy-hal-common",
+ "embassy-stm32",
+ "embassy-sync",
+ "embassy-time",
+ "embedded-hal 0.2.7",
+ "embedded-hal 1.0.0-alpha.10",
+ "embedded-hal-async",
+ "futures",
+ "lora-phy",
+ "lorawan-device",
+]
+
+[[package]]
+name = "embassy-macros"
+version = "0.2.0"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -353,6 +376,7 @@ name = "embassy-stm32"
 version = "0.1.0"
 dependencies = [
  "atomic-polyfill 1.0.2",
+ "bit_field",
  "bxcan",
  "cfg-if",
  "cortex-m",
@@ -407,6 +431,8 @@ dependencies = [
  "critical-section",
  "defmt",
  "embedded-hal 0.2.7",
+ "embedded-hal 1.0.0-alpha.10",
+ "embedded-hal-async",
  "futures-util",
  "heapless",
 ]
@@ -654,6 +680,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "lorawan"
+version = "0.7.3"
+dependencies = [
+ "generic-array",
+]
+
+[[package]]
+name = "lorawan-device"
+version = "0.10.0"
+dependencies = [
+ "as-slice",
+ "futures",
+ "generic-array",
+ "heapless",
+ "lorawan 0.7.3",
+ "rand_core",
+]
+
+[[package]]
 name = "lorawan-pilot"
 version = "0.1.0"
 dependencies = [
@@ -664,6 +709,7 @@ dependencies = [
  "embassy-embedded-hal",
  "embassy-executor",
  "embassy-hal-common",
+ "embassy-lora",
  "embassy-stm32",
  "embassy-sync",
  "embassy-time",
@@ -672,7 +718,7 @@ dependencies = [
  "futures",
  "heapless",
  "lora-phy",
- "lorawan",
+ "lorawan 0.1.0",
  "panic-probe",
  "panic-reset",
  "rand_core",
@@ -873,9 +919,9 @@ dependencies = [
 
 [[package]]
 name = "stm32-metapac"
-version = "6.0.0"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3db96a6b15c874f29b7e599f289e72f2b4a4777d31e2dec18bfb6f31f434a963"
+checksum = "6832b0d9f3dfb798d0b053b9615de67c167cdc1cd6eae280d100cab922d2bad1"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",

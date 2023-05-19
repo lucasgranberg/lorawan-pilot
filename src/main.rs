@@ -16,8 +16,9 @@ use lorawan::mac::mac_1_0_4::region::eu868::Eu868;
 use lorawan::mac::mac_1_0_4::{Credentials, Mac, MacDevice};
 
 mod device;
-mod radio;
-mod stm32wl;
+// mod radio;
+// mod stm32wl;
+mod lora_radio;
 mod timer;
 
 use defmt_rtt as _;
@@ -44,7 +45,7 @@ async fn main(_spawner: Spawner) {
         0x3C,
     ];
     let app_key = AES128(app_key);
-    let mut device = LoraDevice::new(peripherals, app_eui, dev_eui, app_key);
+    let mut device = LoraDevice::new(peripherals).await;
     let mut radio_buffer = Default::default();
     let mut mac = get_mac(&mut device);
     loop {

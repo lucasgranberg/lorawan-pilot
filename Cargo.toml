@@ -9,10 +9,14 @@ edition = "2021"
 lorawan = { version = "0.1.0", path = "../lucasgranberg/lorawan", features = [
     "defmt",
 ] }
+embassy-lora = { version = "0.1.0", path = "../embassy/embassy-lora", features = [
+    "stm32wl",
+    "time",
+] }
 embassy-sync = { version = "0.2.0", path = "../embassy/embassy-sync", features = [
     "defmt",
 ] }
-embassy-executor = { version = "0.1.0", path = "../embassy/embassy-executor", features = [
+embassy-executor = { version = "0.2.0", path = "../embassy/embassy-executor", features = [
     "defmt",
     "integrated-timers",
     "arch-cortex-m",
@@ -23,6 +27,8 @@ embassy-time = { version = "0.1.0", path = "../embassy/embassy-time", features =
     "defmt",
     "defmt-timestamp-uptime",
     "tick-hz-32_768",
+    "unstable-traits",
+    "nightly",
 ] }
 embassy-stm32 = { version = "0.1.0", path = "../embassy/embassy-stm32", features = [
     "nightly",

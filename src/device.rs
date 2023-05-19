@@ -1,24 +1,26 @@
 use core::convert::Infallible;
 
-use embassy_stm32::flash::Flash;
-use embassy_stm32::pac;
-use embassy_stm32::peripherals::RNG;
-use embassy_stm32::rng::Rng;
+use embassy_hal_common::into_ref;
+use embassy_lora::iv::Stm32wlInterfaceVariant;
 use embassy_stm32::{
-    dma::NoDma,
-    gpio::{Level, Output, Pin, Speed},
-    interrupt,
-    subghz::{CalibrateImage, PaConfig, RegMode, SubGhz, TxParams},
+    flash::Flash,
+    gpio::{AnyPin, Level, Output, Pin, Speed},
+    interrupt, pac,
+    peripherals::{RNG, SUBGHZSPI},
+    rng::Rng,
+    spi::Spi,
+    Peripheral, Peripherals,
 };
+use embassy_time::Delay;
+use lora_phy::mod_params::BoardType;
+use lora_phy::sx1261_2::SX1261_2;
+use lora_phy::LoRa;
 use lorawan::device::non_volatile_store::NonVolatileStore;
 use lorawan::device::Device;
-use lorawan::encoding::keys::AES128;
-use lorawan::mac::mac_1_0_4::region::eu868::Eu868;
 use lorawan::mac::mac_1_0_4::region::Region;
 use lorawan::mac::mac_1_0_4::MacDevice;
 
-use crate::radio::RadioSwitch;
-use crate::stm32wl::{SubGhzRadio, SubGhzRadioConfig};
+use crate::lora_radio::{self, LoRaRadio};
 use crate::timer::LoraTimer;
 use rand_core::RngCore;
 
@@ -27,47 +29,55 @@ extern "C" {
 }
 pub struct LoraDevice<'d> {
     rng: DeviceRng<'d>,
-    radio: SubGhzRadio<'d, RadioSwitch<'d>>,
+    radio: lora_radio::LoRaRadio<'d>,
     timer: LoraTimer,
     non_volatile_store: DeviceNonVolatileStore<'d>,
 }
 impl<'a> LoraDevice<'a> {
-    pub fn new(
-        peripherals: embassy_stm32::Peripherals,
-        app_eui: [u8; 8],
-        dev_eui: [u8; 8],
-        app_key: AES128,
-    ) -> Self {
-        let radio = {
-            let subghz = SubGhz::new(peripherals.SUBGHZSPI, NoDma, NoDma);
-            let rfs = RadioSwitch::new(
-                Output::new(peripherals.PC4.degrade(), Level::Low, Speed::VeryHigh),
-                Output::new(peripherals.PC5.degrade(), Level::Low, Speed::VeryHigh),
-                Output::new(peripherals.PC3.degrade(), Level::Low, Speed::VeryHigh),
-            );
-            let radio_config = SubGhzRadioConfig {
-                reg_mode: RegMode::Smps,
-                calibrate_image: CalibrateImage::ISM_863_870,
-                pa_config: PaConfig::HP_22,
-                tx_params: TxParams::HP,
+    pub async fn new(peripherals: Peripherals) -> LoraDevice<'a> {
+        let lora: LoRa<
+            SX1261_2<Spi<'a, SUBGHZSPI, _, _>, Stm32wlInterfaceVariant<'a, Output<'a, AnyPin>>>,
+        > = {
+            let spi = unsafe {
+                Spi::new_subghz(
+                    peripherals.SUBGHZSPI,
+                    peripherals.DMA1_CH2,
+                    peripherals.DMA1_CH3,
+                )
             };
 
-            SubGhzRadio::new(subghz, rfs, interrupt::take!(SUBGHZ_RADIO), radio_config).unwrap()
+            //let spi = BlockingAsync::new(spi);
+
+            let irq: interrupt::SUBGHZ_RADIO = interrupt::take!(SUBGHZ_RADIO);
+            into_ref!(irq);
+            // Set CTRL1 and CTRL3 for high-power transmission, while CTRL2 acts as an RF switch between tx and rx
+            // let _ctrl1 = Output::new(peripherals.ctrl1, Level::Low, Speed::High);
+            // let ctrl2 = Output::new(peripherals.ctrl2, Level::High, Speed::High);
+            let iv = unsafe {
+                Stm32wlInterfaceVariant::new(
+                    irq,
+                    None,
+                    Some(Output::new(
+                        peripherals.PC5.degrade(),
+                        Level::Low,
+                        Speed::High,
+                    )),
+                )
+                .unwrap()
+            };
+
+            let mut delay = Delay;
+
+            LoRa::new(
+                SX1261_2::new(BoardType::Stm32wlSx1262, spi, iv),
+                true,
+                &mut delay,
+            )
+            .await
+            .unwrap()
         };
-        let mut non_volatile_store = DeviceNonVolatileStore {
-            flash: Flash::new(peripherals.FLASH),
-            buf: [0xFF; 256],
-        };
-        let hydrate_res = <Self as MacDevice<Eu868, DeviceSpecs>>::hydrate_from_non_volatile(
-            &mut non_volatile_store,
-            app_eui,
-            dev_eui,
-            app_key,
-        );
-        match hydrate_res {
-            Ok(_) => defmt::info!("credentials and configuration loaded from non volatile"),
-            Err(_) => defmt::info!("credentials and configuration not found in non volatile"),
-        };
+        let radio = LoRaRadio::new(lora);
+        let non_volatile_store = DeviceNonVolatileStore::new(Flash::new(peripherals.FLASH));
         let ret = Self {
             rng: DeviceRng(Rng::new(peripherals.RNG)),
             radio,
@@ -149,7 +159,7 @@ impl lorawan::device::DeviceSpecs for DeviceSpecs {}
 impl<'a> Device for LoraDevice<'a> {
     type Timer = LoraTimer;
 
-    type Radio = SubGhzRadio<'a, RadioSwitch<'a>>;
+    type Radio = LoRaRadio<'a>;
 
     type Rng = DeviceRng<'a>;
 
