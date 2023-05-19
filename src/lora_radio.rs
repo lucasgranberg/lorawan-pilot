@@ -10,7 +10,7 @@ use embassy_stm32::{
     peripherals::{DMA1_CH2, DMA1_CH3, SUBGHZSPI},
     spi::Spi,
 };
-use lora_phy::mod_params::RadioError;
+use lora_phy::mod_params::{ModulationParams, PacketParams, RadioError};
 use lora_phy::sx1261_2::SX1261_2;
 use lora_phy::LoRa;
 use lorawan::device::radio::types::{Bandwidth, CodingRate, RxQuality, SpreadingFactor};
@@ -47,7 +47,7 @@ impl<'d> Radio for LoRaRadio<'d> {
         &mut self,
         config: lorawan::device::radio::types::TxConfig,
         buf: &[u8],
-    ) -> Result<usize, <LoRaRadio<'static> as lorawan::device::radio::Radio>::Error> {
+    ) -> Result<usize, <LoRaRadio<'d> as lorawan::device::radio::Radio>::Error> {
         let sf = match config.rf.data_rate.spreading_factor {
             SpreadingFactor::_7 => lora_phy::mod_params::SpreadingFactor::_7,
             SpreadingFactor::_8 => lora_phy::mod_params::SpreadingFactor::_8,
@@ -110,6 +110,10 @@ impl<'d> Radio for LoRaRadio<'d> {
             CodingRate::_4_7 => lora_phy::mod_params::CodingRate::_4_7,
             CodingRate::_4_8 => lora_phy::mod_params::CodingRate::_4_8,
         };
+        let mdltn_params = ModulationParams::new_for_sx1261_2(sf, bw, cr, config.frequency)?;
+
+        let tx_pkt_params =
+            PacketParams::new_for_sx1261_2(8, false, 0, true, false, &mdltn_params)?;
         let mdltn_params = self
             .lora
             .create_modulation_params(sf, bw, cr, config.frequency)?;

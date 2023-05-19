@@ -58,4 +58,4 @@ futures = { version = "0.3.25", default-features = false, features = [
 ] }
 heapless = { version = "0.7.16", default-features = false }
 rand_core = { version = "0.6.2", default-features = false }
-lora-phy = "1.1.0"
+lora-phy = { version = "1.1.0", path = "../embassy-rs/lora-phy" }

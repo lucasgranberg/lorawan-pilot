@@ -350,7 +350,7 @@ dependencies = [
  "embedded-hal 1.0.0-alpha.10",
  "embedded-hal-async",
  "futures",
- "lora-phy",
+ "lora-phy 1.1.0",
  "lorawan-device",
 ]
 
@@ -657,6 +657,15 @@ dependencies = [
 [[package]]
 name = "lora-phy"
 version = "1.1.0"
+dependencies = [
+ "defmt",
+ "embedded-hal-async",
+ "log",
+]
+
+[[package]]
+name = "lora-phy"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab77b16e5c883ac479f319f5fc33c0d75b19cab71db48923eb7e32f0f07e8aa1"
 dependencies = [
@@ -676,7 +685,7 @@ dependencies = [
  "futures",
  "generic-array",
  "heapless",
- "lora-phy",
+ "lora-phy 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -717,7 +726,7 @@ dependencies = [
  "embedded-storage",
  "futures",
  "heapless",
- "lora-phy",
+ "lora-phy 1.1.0",
  "lorawan 0.1.0",
  "panic-probe",
  "panic-reset",
