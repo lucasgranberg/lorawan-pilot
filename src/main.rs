@@ -3,16 +3,17 @@
 #![macro_use]
 #![feature(type_alias_impl_trait)]
 #![deny(elided_lifetimes_in_paths)]
+#![feature(async_fn_in_trait)]
 
 use embassy_executor::Spawner;
 use embassy_stm32::pac;
 use embassy_time::Duration;
 use lorawan::device::radio::types::RxQuality;
+use lorawan::device::Device;
 use lorawan::encoding::keys::AES128;
 use lorawan::mac::mac_1_0_4::region::channel_plan::DynamicChannelPlan;
 use lorawan::mac::mac_1_0_4::region::eu868::Eu868;
-use lorawan::mac::mac_1_0_4::Mac;
-use lorawan::mac::Mac as _;
+use lorawan::mac::mac_1_0_4::{Credentials, Mac, MacDevice};
 
 mod device;
 mod radio;
@@ -45,7 +46,7 @@ async fn main(_spawner: Spawner) {
     let app_key = AES128(app_key);
     let mut device = LoraDevice::new(peripherals, app_eui, dev_eui, app_key);
     let mut radio_buffer = Default::default();
-    let mut mac: Mac<Eu868, LoraDevice<'static>, DynamicChannelPlan<Eu868>> = Mac::new();
+    let mut mac = get_mac(&mut device);
     loop {
         while !mac.is_joined() {
             defmt::info!("JOINING");
@@ -76,4 +77,42 @@ async fn main(_spawner: Spawner) {
             embassy_time::Timer::after(Duration::from_secs(300)).await;
         }
     }
+}
+pub fn get_mac(
+    device: &mut LoraDevice<'static>,
+) -> Mac<Eu868, DeviceSpecs, DynamicChannelPlan<Eu868>> {
+    pub const DEVICE_ID_PTR: *const u8 = 0x1FFF_7580 as _;
+    let dev_eui: [u8; 8] = unsafe { *DEVICE_ID_PTR.cast::<[u8; 8]>() };
+    let app_eui: [u8; 8] = [0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01];
+    let app_key: AES128 = AES128([
+        0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6, 0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F,
+        0x3C,
+    ]);
+    defmt::info!(
+        "deveui:\t{:X}-{:X}-{:X}-{:X}-{:X}-{:X}-{:X}-{:X}",
+        dev_eui[7],
+        dev_eui[6],
+        dev_eui[5],
+        dev_eui[4],
+        dev_eui[3],
+        dev_eui[2],
+        dev_eui[1],
+        dev_eui[0]
+    );
+    let hydrate_res =
+        <LoraDevice<'static> as MacDevice<Eu868, DeviceSpecs>>::hydrate_from_non_volatile(
+            device.non_volatile_store(),
+            app_eui,
+            dev_eui,
+            app_key,
+        );
+    match hydrate_res {
+        Ok(_) => defmt::info!("credentials and configuration loaded from non volatile"),
+        Err(_) => defmt::info!("credentials and configuration not found in non volatile"),
+    };
+    let (configuration, credentials) = hydrate_res.unwrap_or((
+        Default::default(),
+        Credentials::new(app_eui, dev_eui, app_key),
+    ));
+    Mac::new(configuration, credentials)
 }

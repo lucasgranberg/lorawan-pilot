@@ -1,5 +1,5 @@
 //! A radio driver integration for the radio found on STM32WL family devices.
-use core::future::{poll_fn, Future};
+use core::future::poll_fn;
 use core::task::Poll;
 
 use defmt::trace;
@@ -268,16 +268,22 @@ fn configure_radio(
 
 impl<'d, RS: RadioSwitch> Radio for SubGhzRadio<'d, RS> {
     type Error = RadioError;
-    type TxFuture<'m> = impl Future<Output = Result<usize, Self::Error>> + 'm where Self: 'm;
 
-    fn tx<'m>(&'m mut self, config: TxConfig, buf: &'m [u8]) -> Self::TxFuture<'m> {
-        self.do_tx(config, buf)
+    async fn tx(
+        &mut self,
+        config: TxConfig,
+        buf: &[u8],
+    ) -> Result<usize, <SubGhzRadio<'d, RS> as lorawan::device::radio::Radio>::Error> {
+        self.do_tx(config, buf).await
     }
 
-    type RxFuture<'m> = impl Future<Output = Result<(usize, RxQuality), Self::Error>> + 'm  where Self: 'm;
-
-    fn rx<'m>(&'m mut self, config: RfConfig, rx_buf: &'m mut [u8]) -> Self::RxFuture<'m> {
-        self.do_rx(config, rx_buf)
+    async fn rx(
+        &mut self,
+        config: RfConfig,
+        rx_buf: &mut [u8],
+    ) -> Result<(usize, RxQuality), <SubGhzRadio<'d, RS> as lorawan::device::radio::Radio>::Error>
+    {
+        self.do_rx(config, rx_buf).await
     }
 }
 

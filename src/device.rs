@@ -2,7 +2,7 @@ use core::convert::Infallible;
 
 use embassy_stm32::flash::Flash;
 use embassy_stm32::pac;
-use embassy_stm32::peripherals::{FLASH, RNG};
+use embassy_stm32::peripherals::RNG;
 use embassy_stm32::rng::Rng;
 use embassy_stm32::{
     dma::NoDma,
@@ -15,7 +15,7 @@ use lorawan::device::Device;
 use lorawan::encoding::keys::AES128;
 use lorawan::mac::mac_1_0_4::region::eu868::Eu868;
 use lorawan::mac::mac_1_0_4::region::Region;
-use lorawan::mac::mac_1_0_4::{Configuration, Credentials, MacDevice};
+use lorawan::mac::mac_1_0_4::MacDevice;
 
 use crate::radio::RadioSwitch;
 use crate::stm32wl::{SubGhzRadio, SubGhzRadioConfig};
@@ -29,9 +29,7 @@ pub struct LoraDevice<'d> {
     rng: DeviceRng<'d>,
     radio: SubGhzRadio<'d, RadioSwitch<'d>>,
     timer: LoraTimer,
-    non_volatile_store: DeviceNonVolatileStore,
-    credentials: Credentials,
-    configuration: Configuration,
+    non_volatile_store: DeviceNonVolatileStore<'d>,
 }
 impl<'a> LoraDevice<'a> {
     pub fn new(
@@ -57,10 +55,10 @@ impl<'a> LoraDevice<'a> {
             SubGhzRadio::new(subghz, rfs, interrupt::take!(SUBGHZ_RADIO), radio_config).unwrap()
         };
         let mut non_volatile_store = DeviceNonVolatileStore {
-            flash: peripherals.FLASH,
+            flash: Flash::new(peripherals.FLASH),
             buf: [0xFF; 256],
         };
-        let hydrate_res = <Self as MacDevice<Eu868>>::hydrate_from_non_volatile(
+        let hydrate_res = <Self as MacDevice<Eu868, DeviceSpecs>>::hydrate_from_non_volatile(
             &mut non_volatile_store,
             app_eui,
             dev_eui,
@@ -70,17 +68,11 @@ impl<'a> LoraDevice<'a> {
             Ok(_) => defmt::info!("credentials and configuration loaded from non volatile"),
             Err(_) => defmt::info!("credentials and configuration not found in non volatile"),
         };
-        let (configuration, credentials) = hydrate_res.unwrap_or((
-            Default::default(),
-            Credentials::new(app_eui, dev_eui, app_key),
-        ));
         let ret = Self {
             rng: DeviceRng(Rng::new(peripherals.RNG)),
             radio,
             timer: LoraTimer::new(),
-            non_volatile_store: non_volatile_store,
-            credentials: credentials,
-            configuration: configuration,
+            non_volatile_store,
         };
         ret
     }
@@ -92,12 +84,18 @@ impl<'d> defmt::Format for LoraDevice<'d> {
 }
 pub struct DeviceRng<'a>(Rng<'a, RNG>);
 
-pub struct DeviceNonVolatileStore {
-    flash: FLASH,
+pub struct DeviceNonVolatileStore<'a> {
+    flash: Flash<'a>,
     buf: [u8; 256],
 }
-impl DeviceNonVolatileStore {
-    fn offset() -> u32 {
+impl<'a> DeviceNonVolatileStore<'a> {
+    pub fn new(flash: Flash<'a>) -> Self {
+        Self {
+            flash,
+            buf: [0xFF; 256],
+        }
+    }
+    pub fn offset() -> u32 {
         (unsafe { &__storage as *const u8 as u32 }) - pac::FLASH_BASE as u32
     }
 }
@@ -106,7 +104,7 @@ pub enum NonVolatileStoreError {
     Flash(embassy_stm32::flash::Error),
     Encoding,
 }
-impl NonVolatileStore for DeviceNonVolatileStore {
+impl<'m> NonVolatileStore for DeviceNonVolatileStore<'m> {
     type Error = NonVolatileStoreError;
 
     fn save<'a, T>(&mut self, item: T) -> Result<(), Self::Error>
@@ -115,12 +113,11 @@ impl NonVolatileStore for DeviceNonVolatileStore {
     {
         self.buf = [0xFFu8; 256];
         let offset = Self::offset();
-        let mut flash = Flash::new(&mut self.flash);
-        flash
+        self.flash
             .blocking_erase(offset, offset + 2048)
             .map_err(NonVolatileStoreError::Flash)?;
         self.buf[..core::mem::size_of::<T>()].copy_from_slice(item.into());
-        flash
+        self.flash
             .blocking_write(offset, &self.buf)
             .map_err(NonVolatileStoreError::Flash)
     }
@@ -129,9 +126,8 @@ impl NonVolatileStore for DeviceNonVolatileStore {
     where
         T: Sized + TryFrom<&'a [u8]>,
     {
-        let mut flash = Flash::new(&mut self.flash);
         let offset = Self::offset();
-        flash
+        self.flash
             .blocking_read(offset, &mut self.buf)
             .map_err(NonVolatileStoreError::Flash)?;
         self.buf[..core::mem::size_of::<T>()]
@@ -147,6 +143,9 @@ impl<'a> lorawan::device::rng::Rng for DeviceRng<'a> {
         Ok(self.0.next_u32())
     }
 }
+
+pub struct DeviceSpecs;
+impl lorawan::device::DeviceSpecs for DeviceSpecs {}
 impl<'a> Device for LoraDevice<'a> {
     type Timer = LoraTimer;
 
@@ -154,7 +153,7 @@ impl<'a> Device for LoraDevice<'a> {
 
     type Rng = DeviceRng<'a>;
 
-    type NonVolatileStore = DeviceNonVolatileStore;
+    type NonVolatileStore = DeviceNonVolatileStore<'a>;
 
     fn timer(&mut self) -> &mut Self::Timer {
         &mut self.timer
@@ -191,40 +190,5 @@ impl<'a> Device for LoraDevice<'a> {
     fn battery_level(&self) -> Option<f32> {
         None
     }
-
-    fn min_frequency() -> Option<u32> {
-        None
-    }
-
-    fn max_frequency() -> Option<u32> {
-        None
-    }
-
-    fn min_data_rate() -> Option<lorawan::DR> {
-        None
-    }
-
-    fn max_data_rate() -> Option<lorawan::DR> {
-        None
-    }
 }
-impl<'a, R> MacDevice<R> for LoraDevice<'a>
-where
-    R: Region,
-{
-    fn credentials(&mut self) -> &mut Credentials {
-        &mut self.credentials
-    }
-
-    fn configuration(&mut self) -> &mut Configuration {
-        &mut self.configuration
-    }
-
-    fn set_credentials(&mut self, credentials: Credentials) {
-        self.credentials = credentials;
-    }
-
-    fn set_configuration(&mut self, configuration: Configuration) {
-        self.configuration = configuration;
-    }
-}
+impl<'a, R> MacDevice<R, DeviceSpecs> for LoraDevice<'a> where R: Region {}

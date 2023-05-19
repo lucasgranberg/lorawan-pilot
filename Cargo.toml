@@ -9,7 +9,7 @@ edition = "2021"
 lorawan = { version = "0.1.0", path = "../lucasgranberg/lorawan", features = [
     "defmt",
 ] }
-embassy-sync = { version = "0.1.0", path = "../embassy/embassy-sync", features = [
+embassy-sync = { version = "0.2.0", path = "../embassy/embassy-sync", features = [
     "defmt",
 ] }
 embassy-executor = { version = "0.1.0", path = "../embassy/embassy-executor", features = [
@@ -52,3 +52,4 @@ futures = { version = "0.3.25", default-features = false, features = [
 ] }
 heapless = { version = "0.7.16", default-features = false }
 rand_core = { version = "0.6.2", default-features = false }
+lora-phy = "1.1.0"
