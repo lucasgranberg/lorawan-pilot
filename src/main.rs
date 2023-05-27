@@ -1,16 +1,16 @@
 #![no_std]
 #![no_main]
 #![macro_use]
-#![feature(type_alias_impl_trait)]
 #![deny(elided_lifetimes_in_paths)]
 #![feature(async_fn_in_trait)]
+#![feature(type_alias_impl_trait)]
+#![feature(impl_trait_in_assoc_type)]
 
 use embassy_executor::Spawner;
 use embassy_stm32::pac;
 use embassy_time::Duration;
 use lorawan::device::radio::types::RxQuality;
 use lorawan::device::Device;
-use lorawan::encoding::keys::AES128;
 use lorawan::mac::mac_1_0_4::region::channel_plan::DynamicChannelPlan;
 use lorawan::mac::mac_1_0_4::region::eu868::Eu868;
 use lorawan::mac::mac_1_0_4::{Credentials, Mac, MacDevice};
@@ -37,14 +37,6 @@ async fn main(_spawner: Spawner) {
     let peripherals = embassy_stm32::init(config);
 
     unsafe { pac::RCC.ccipr().modify(|w| w.set_rngsel(0b01)) }
-    pub const DEVICE_ID_PTR: *const u8 = 0x1FFF_7580 as _;
-    let dev_eui: [u8; 8] = unsafe { *DEVICE_ID_PTR.cast::<[u8; 8]>() };
-    let app_eui: [u8; 8] = [0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01];
-    let app_key: [u8; 16] = [
-        0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6, 0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F,
-        0x3C,
-    ];
-    let app_key = AES128(app_key);
     let mut device = LoraDevice::new(peripherals).await;
     let mut radio_buffer = Default::default();
     let mut mac = get_mac(&mut device);
@@ -83,10 +75,10 @@ pub fn get_mac(device: &mut LoraDevice<'_>) -> Mac<Eu868, DeviceSpecs, DynamicCh
     pub const DEVICE_ID_PTR: *const u8 = 0x1FFF_7580 as _;
     let dev_eui: [u8; 8] = unsafe { *DEVICE_ID_PTR.cast::<[u8; 8]>() };
     let app_eui: [u8; 8] = [0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01];
-    let app_key: AES128 = AES128([
+    let app_key: [u8; 16] = [
         0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6, 0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F,
         0x3C,
-    ]);
+    ];
     defmt::info!(
         "deveui:\t{:X}-{:X}-{:X}-{:X}-{:X}-{:X}-{:X}-{:X}",
         dev_eui[7],

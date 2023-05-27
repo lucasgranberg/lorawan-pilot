@@ -1,15 +1,15 @@
 use core::convert::Infallible;
 
-use embassy_hal_common::into_ref;
-use embassy_lora::iv::Stm32wlInterfaceVariant;
+use embassy_lora::iv::{InterruptHandler, Stm32wlInterfaceVariant};
 use embassy_stm32::{
+    bind_interrupts,
     flash::Flash,
     gpio::{AnyPin, Level, Output, Pin, Speed},
-    interrupt, pac,
+    pac,
     peripherals::{RNG, SUBGHZSPI},
     rng::Rng,
     spi::Spi,
-    Peripheral, Peripherals,
+    Peripherals,
 };
 use embassy_time::Delay;
 use lora_phy::mod_params::BoardType;
@@ -27,6 +27,10 @@ use rand_core::RngCore;
 extern "C" {
     static __storage: u8;
 }
+bind_interrupts!(struct Irqs{
+    SUBGHZ_RADIO => InterruptHandler;
+});
+
 pub struct LoraDevice<'d> {
     rng: DeviceRng<'d>,
     radio: lora_radio::LoRaRadio<'d>,
@@ -36,35 +40,23 @@ pub struct LoraDevice<'d> {
 impl<'a> LoraDevice<'a> {
     pub async fn new(peripherals: Peripherals) -> LoraDevice<'a> {
         let lora: LoRa<
-            SX1261_2<Spi<'a, SUBGHZSPI, _, _>, Stm32wlInterfaceVariant<'a, Output<'a, AnyPin>>>,
+            SX1261_2<Spi<'a, SUBGHZSPI, _, _>, Stm32wlInterfaceVariant<Output<'a, AnyPin>>>,
         > = {
-            let spi = unsafe {
-                Spi::new_subghz(
-                    peripherals.SUBGHZSPI,
-                    peripherals.DMA1_CH2,
-                    peripherals.DMA1_CH3,
-                )
-            };
-
-            //let spi = BlockingAsync::new(spi);
-
-            let irq: interrupt::SUBGHZ_RADIO = interrupt::take!(SUBGHZ_RADIO);
-            into_ref!(irq);
-            // Set CTRL1 and CTRL3 for high-power transmission, while CTRL2 acts as an RF switch between tx and rx
-            // let _ctrl1 = Output::new(peripherals.ctrl1, Level::Low, Speed::High);
-            // let ctrl2 = Output::new(peripherals.ctrl2, Level::High, Speed::High);
-            let iv = unsafe {
-                Stm32wlInterfaceVariant::new(
-                    irq,
-                    None,
-                    Some(Output::new(
-                        peripherals.PC5.degrade(),
-                        Level::Low,
-                        Speed::High,
-                    )),
-                )
-                .unwrap()
-            };
+            let spi = Spi::new_subghz(
+                peripherals.SUBGHZSPI,
+                peripherals.DMA1_CH2,
+                peripherals.DMA1_CH3,
+            );
+            let iv = Stm32wlInterfaceVariant::new(
+                Irqs,
+                None,
+                Some(Output::new(
+                    peripherals.PC5.degrade(),
+                    Level::Low,
+                    Speed::High,
+                )),
+            )
+            .unwrap();
 
             let mut delay = Delay;
 
