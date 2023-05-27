@@ -17,8 +17,8 @@ use lora_phy::sx1261_2::SX1261_2;
 use lora_phy::LoRa;
 use lorawan::device::non_volatile_store::NonVolatileStore;
 use lorawan::device::Device;
-use lorawan::mac::mac_1_0_4::region::Region;
-use lorawan::mac::mac_1_0_4::MacDevice;
+use lorawan::mac::region::Region;
+use lorawan::mac::MacDevice;
 
 use crate::lora_radio::{self, LoRaRadio};
 use crate::timer::LoraTimer;
