@@ -11,7 +11,7 @@ use embassy_stm32::pac;
 use embassy_time::Duration;
 use lorawan::device::radio::types::RxQuality;
 use lorawan::device::Device;
-use lorawan::mac::region::channel_plan::DynamicChannelPlan;
+use lorawan::mac::region::channel_plan::dynamic::DynamicChannelPlan;
 use lorawan::mac::region::eu868::Eu868;
 use lorawan::mac::types::Credentials;
 use lorawan::mac::{Mac, MacDevice};
