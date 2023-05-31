@@ -3,7 +3,7 @@ use core::convert::Infallible;
 use embassy_lora::iv::{InterruptHandler, Stm32wlInterfaceVariant};
 use embassy_stm32::{
     bind_interrupts,
-    flash::Flash,
+    flash::{Blocking, Flash},
     gpio::{AnyPin, Level, Output, Pin, Speed},
     pac,
     peripherals::{RNG, SUBGHZSPI},
@@ -59,17 +59,13 @@ impl<'a> LoraDevice<'a> {
             .unwrap();
 
             let mut delay = Delay;
+            let radio_kind = SX1261_2::new(BoardType::Stm32wlSx1262, spi, iv);
 
-            LoRa::new(
-                SX1261_2::new(BoardType::Stm32wlSx1262, spi, iv),
-                true,
-                &mut delay,
-            )
-            .await
-            .unwrap()
+            LoRa::new(radio_kind, true, &mut delay).await.unwrap()
         };
         let radio = LoRaRadio::new(lora);
-        let non_volatile_store = DeviceNonVolatileStore::new(Flash::new(peripherals.FLASH));
+        let non_volatile_store =
+            DeviceNonVolatileStore::new(Flash::new_blocking(peripherals.FLASH));
         let ret = Self {
             rng: DeviceRng(Rng::new(peripherals.RNG)),
             radio,
@@ -87,11 +83,11 @@ impl<'d> defmt::Format for LoraDevice<'d> {
 pub struct DeviceRng<'a>(Rng<'a, RNG>);
 
 pub struct DeviceNonVolatileStore<'a> {
-    flash: Flash<'a>,
+    flash: Flash<'a, Blocking>,
     buf: [u8; 256],
 }
 impl<'a> DeviceNonVolatileStore<'a> {
-    pub fn new(flash: Flash<'a>) -> Self {
+    pub fn new(flash: Flash<'a, Blocking>) -> Self {
         Self {
             flash,
             buf: [0xFF; 256],
@@ -130,7 +126,7 @@ impl<'m> NonVolatileStore for DeviceNonVolatileStore<'m> {
     {
         let offset = Self::offset();
         self.flash
-            .blocking_read(offset, &mut self.buf)
+            .read(offset, &mut self.buf)
             .map_err(NonVolatileStoreError::Flash)?;
         self.buf[..core::mem::size_of::<T>()]
             .try_into()
