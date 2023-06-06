@@ -5,10 +5,13 @@
 #![feature(async_fn_in_trait)]
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
+#![allow(incomplete_features)]
 
 use embassy_executor::Spawner;
 use embassy_stm32::pac;
 use embassy_time::Duration;
+use embedded_hal_async::delay::DelayUs;
+use lora_phy::mod_traits::RadioKind;
 use lorawan::device::radio::types::RxQuality;
 use lorawan::device::Device;
 use lorawan::mac::region::channel_plan::dynamic::DynamicChannelPlan;
@@ -72,7 +75,13 @@ async fn main(_spawner: Spawner) {
         }
     }
 }
-pub fn get_mac(device: &mut LoraDevice<'_>) -> Mac<Eu868, DeviceSpecs, DynamicChannelPlan<Eu868>> {
+pub fn get_mac<RK, DLY>(
+    device: &mut LoraDevice<'_, RK, DLY>,
+) -> Mac<Eu868, DeviceSpecs, DynamicChannelPlan<Eu868>>
+where
+    RK: RadioKind,
+    DLY: DelayUs,
+{
     pub const DEVICE_ID_PTR: *const u8 = 0x1FFF_7580 as _;
     let dev_eui: [u8; 8] = unsafe { *DEVICE_ID_PTR.cast::<[u8; 8]>() };
     let app_eui: [u8; 8] = [0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01];
@@ -91,12 +100,13 @@ pub fn get_mac(device: &mut LoraDevice<'_>) -> Mac<Eu868, DeviceSpecs, DynamicCh
         dev_eui[1],
         dev_eui[0]
     );
-    let hydrate_res = <LoraDevice<'_> as MacDevice<Eu868, DeviceSpecs>>::hydrate_from_non_volatile(
-        device.non_volatile_store(),
-        app_eui,
-        dev_eui,
-        app_key,
-    );
+    let hydrate_res =
+        <LoraDevice<'_, RK, DLY> as MacDevice<Eu868, DeviceSpecs>>::hydrate_from_non_volatile(
+            device.non_volatile_store(),
+            app_eui,
+            dev_eui,
+            app_key,
+        );
     match hydrate_res {
         Ok(_) => defmt::info!("credentials and configuration loaded from non volatile"),
         Err(_) => defmt::info!("credentials and configuration not found in non volatile"),

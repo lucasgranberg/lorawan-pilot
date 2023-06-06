@@ -4,17 +4,18 @@ use embassy_lora::iv::{InterruptHandler, Stm32wlInterfaceVariant};
 use embassy_stm32::{
     bind_interrupts,
     flash::{Blocking, Flash},
-    gpio::{AnyPin, Level, Output, Pin, Speed},
+    gpio::{Level, Output, Pin, Speed},
     pac,
-    peripherals::{RNG, SUBGHZSPI},
+    peripherals::RNG,
     rng::Rng,
     spi::Spi,
     Peripherals,
 };
 use embassy_time::Delay;
-use lora_phy::mod_params::BoardType;
+use embedded_hal_async::delay::DelayUs;
 use lora_phy::sx1261_2::SX1261_2;
 use lora_phy::LoRa;
+use lora_phy::{mod_params::BoardType, mod_traits::RadioKind};
 use lorawan::device::non_volatile_store::NonVolatileStore;
 use lorawan::device::Device;
 use lorawan::mac::region::Region;
@@ -31,17 +32,24 @@ bind_interrupts!(struct Irqs{
     SUBGHZ_RADIO => InterruptHandler;
 });
 
-pub struct LoraDevice<'d> {
+pub struct LoraDevice<'d, RK, DLY>
+where
+    RK: RadioKind,
+    DLY: DelayUs,
+{
     rng: DeviceRng<'d>,
-    radio: lora_radio::LoRaRadio<'d>,
+    radio: lora_radio::LoRaRadio<RK, DLY>,
     timer: LoraTimer,
     non_volatile_store: DeviceNonVolatileStore<'d>,
 }
-impl<'a> LoraDevice<'a> {
-    pub async fn new(peripherals: Peripherals) -> LoraDevice<'a> {
-        let lora: LoRa<
-            SX1261_2<Spi<'a, SUBGHZSPI, _, _>, Stm32wlInterfaceVariant<Output<'a, AnyPin>>>,
-        > = {
+
+impl<'d, RK, DLY> LoraDevice<'d, RK, DLY>
+where
+    RK: RadioKind,
+    DLY: DelayUs,
+{
+    pub async fn new(peripherals: Peripherals) -> LoraDevice<'d, RK, DLY> {
+        let lora = {
             let spi = Spi::new_subghz(
                 peripherals.SUBGHZSPI,
                 peripherals.DMA1_CH2,
@@ -58,10 +66,9 @@ impl<'a> LoraDevice<'a> {
             )
             .unwrap();
 
-            let mut delay = Delay;
             let radio_kind = SX1261_2::new(BoardType::Stm32wlSx1262, spi, iv);
 
-            LoRa::new(radio_kind, true, &mut delay).await.unwrap()
+            LoRa::new(radio_kind, true, Delay).await.unwrap()
         };
         let radio = LoRaRadio::new(lora);
         let non_volatile_store =
@@ -75,7 +82,11 @@ impl<'a> LoraDevice<'a> {
         ret
     }
 }
-impl<'d> defmt::Format for LoraDevice<'d> {
+impl<'d, RK, DLY> defmt::Format for LoraDevice<'d, RK, DLY>
+where
+    RK: RadioKind,
+    DLY: DelayUs,
+{
     fn format(&self, fmt: defmt::Formatter<'_>) {
         defmt::write!(fmt, "LoraDevice")
     }
@@ -142,12 +153,14 @@ impl<'a> lorawan::device::rng::Rng for DeviceRng<'a> {
     }
 }
 
-pub struct DeviceSpecs;
-impl lorawan::device::DeviceSpecs for DeviceSpecs {}
-impl<'a> Device for LoraDevice<'a> {
+impl<'a, RK, DLY> Device for LoraDevice<'a, RK, DLY>
+where
+    RK: RadioKind,
+    DLY: DelayUs,
+{
     type Timer = LoraTimer;
 
-    type Radio = LoRaRadio<'a>;
+    type Radio = LoRaRadio<RK, DLY>;
 
     type Rng = DeviceRng<'a>;
 
@@ -189,4 +202,13 @@ impl<'a> Device for LoraDevice<'a> {
         None
     }
 }
-impl<'a, R> MacDevice<R, DeviceSpecs> for LoraDevice<'a> where R: Region {}
+
+pub struct DeviceSpecs;
+impl lorawan::device::DeviceSpecs for DeviceSpecs {}
+impl<'a, R, RK, DLY> MacDevice<R, DeviceSpecs> for LoraDevice<'a, RK, DLY>
+where
+    R: Region,
+    RK: RadioKind,
+    DLY: DelayUs,
+{
+}
