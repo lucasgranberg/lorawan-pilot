@@ -84,17 +84,9 @@ where
             &mdltn_params,
         )?;
         self.lora
-            .prepare_for_rx(
-                &mdltn_params,
-                &rx_pkt_params,
-                None,
-                true, // RX continuous
-                false,
-                4,
-                0x00ffffffu32,
-            )
+            .prepare_for_rx(&mdltn_params, &rx_pkt_params, None, false, false, 12)
             .await?;
-        match self.lora.rx(&rx_pkt_params, rx_buf).await {
+        match self.lora.rx(Some(1000), &rx_pkt_params, rx_buf).await {
             Ok((received_len, rx_pkt_status)) => {
                 Ok((
                     received_len as usize,
