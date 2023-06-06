@@ -7,31 +7,42 @@
 #![feature(impl_trait_in_assoc_type)]
 #![allow(incomplete_features)]
 
+use defmt_rtt as _;
+use device::*;
 use embassy_executor::Spawner;
-use embassy_stm32::pac;
-use embassy_time::Duration;
+use embassy_lora::iv::{InterruptHandler, Stm32wlInterfaceVariant};
+use embassy_stm32::{
+    bind_interrupts,
+    flash::Flash,
+    gpio::{Level, Output, Pin, Speed},
+    pac,
+    rng::Rng,
+    spi::Spi,
+};
+use embassy_time::{Delay, Duration};
 use embedded_hal_async::delay::DelayUs;
-use lora_phy::mod_traits::RadioKind;
+use lora_phy::{mod_params::BoardType, mod_traits::RadioKind, sx1261_2::SX1261_2, LoRa};
+use lora_radio::LoRaRadio;
 use lorawan::device::radio::types::RxQuality;
 use lorawan::device::Device;
 use lorawan::mac::region::channel_plan::dynamic::DynamicChannelPlan;
 use lorawan::mac::region::eu868::Eu868;
 use lorawan::mac::types::Credentials;
 use lorawan::mac::{Mac, MacDevice};
-
-mod device;
-// mod radio;
-// mod stm32wl;
-mod lora_radio;
-mod timer;
-
-use defmt_rtt as _;
-use device::*;
 #[cfg(debug_assertions)]
 use panic_probe as _;
 // release profile: minimize the binary size of the application
 #[cfg(not(debug_assertions))]
 use panic_reset as _;
+use timer::LoraTimer;
+
+mod device;
+mod lora_radio;
+mod timer;
+
+bind_interrupts!(struct Irqs{
+    SUBGHZ_RADIO => InterruptHandler;
+});
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
@@ -41,7 +52,35 @@ async fn main(_spawner: Spawner) {
     let peripherals = embassy_stm32::init(config);
 
     unsafe { pac::RCC.ccipr().modify(|w| w.set_rngsel(0b01)) }
-    let mut device = LoraDevice::new(peripherals).await;
+
+    let lora = {
+        let spi = Spi::new_subghz(
+            peripherals.SUBGHZSPI,
+            peripherals.DMA1_CH2,
+            peripherals.DMA1_CH3,
+        );
+        let iv = Stm32wlInterfaceVariant::new(
+            Irqs,
+            None,
+            Some(Output::new(
+                peripherals.PC5.degrade(),
+                Level::Low,
+                Speed::High,
+            )),
+        )
+        .unwrap();
+
+        let radio_kind = SX1261_2::new(BoardType::Stm32wlSx1262, spi, iv);
+
+        LoRa::new(radio_kind, true, Delay).await.unwrap()
+    };
+
+    let rng = DeviceRng(Rng::new(peripherals.RNG));
+    let radio = LoRaRadio::new(lora);
+    let timer = LoraTimer::new();
+    let non_volatile_store = DeviceNonVolatileStore::new(Flash::new_blocking(peripherals.FLASH));
+
+    let mut device = LoraDevice::new(rng, radio, timer, non_volatile_store);
     let mut radio_buffer = Default::default();
     let mut mac = get_mac(&mut device);
     loop {

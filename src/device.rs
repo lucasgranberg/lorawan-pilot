@@ -1,36 +1,25 @@
 use core::convert::Infallible;
 
-use embassy_lora::iv::{InterruptHandler, Stm32wlInterfaceVariant};
 use embassy_stm32::{
-    bind_interrupts,
     flash::{Blocking, Flash},
-    gpio::{Level, Output, Pin, Speed},
     pac,
     peripherals::RNG,
     rng::Rng,
-    spi::Spi,
-    Peripherals,
 };
-use embassy_time::Delay;
 use embedded_hal_async::delay::DelayUs;
-use lora_phy::sx1261_2::SX1261_2;
-use lora_phy::LoRa;
-use lora_phy::{mod_params::BoardType, mod_traits::RadioKind};
+use lora_phy::mod_traits::RadioKind;
 use lorawan::device::non_volatile_store::NonVolatileStore;
 use lorawan::device::Device;
 use lorawan::mac::region::Region;
 use lorawan::mac::MacDevice;
 
-use crate::lora_radio::{self, LoRaRadio};
+use crate::lora_radio::LoRaRadio;
 use crate::timer::LoraTimer;
 use rand_core::RngCore;
 
 extern "C" {
     static __storage: u8;
 }
-bind_interrupts!(struct Irqs{
-    SUBGHZ_RADIO => InterruptHandler;
-});
 
 pub struct LoraDevice<'d, RK, DLY>
 where
@@ -38,7 +27,7 @@ where
     DLY: DelayUs,
 {
     rng: DeviceRng<'d>,
-    radio: lora_radio::LoRaRadio<RK, DLY>,
+    radio: LoRaRadio<RK, DLY>,
     timer: LoraTimer,
     non_volatile_store: DeviceNonVolatileStore<'d>,
 }
@@ -48,35 +37,16 @@ where
     RK: RadioKind,
     DLY: DelayUs,
 {
-    pub async fn new(peripherals: Peripherals) -> LoraDevice<'d, RK, DLY> {
-        let lora = {
-            let spi = Spi::new_subghz(
-                peripherals.SUBGHZSPI,
-                peripherals.DMA1_CH2,
-                peripherals.DMA1_CH3,
-            );
-            let iv = Stm32wlInterfaceVariant::new(
-                Irqs,
-                None,
-                Some(Output::new(
-                    peripherals.PC5.degrade(),
-                    Level::Low,
-                    Speed::High,
-                )),
-            )
-            .unwrap();
-
-            let radio_kind = SX1261_2::new(BoardType::Stm32wlSx1262, spi, iv);
-
-            LoRa::new(radio_kind, true, Delay).await.unwrap()
-        };
-        let radio = LoRaRadio::new(lora);
-        let non_volatile_store =
-            DeviceNonVolatileStore::new(Flash::new_blocking(peripherals.FLASH));
+    pub fn new(
+        rng: DeviceRng<'d>,
+        radio: LoRaRadio<RK, DLY>,
+        timer: LoraTimer,
+        non_volatile_store: DeviceNonVolatileStore<'d>,
+    ) -> LoraDevice<'d, RK, DLY> {
         let ret = Self {
-            rng: DeviceRng(Rng::new(peripherals.RNG)),
+            rng,
             radio,
-            timer: LoraTimer::new(),
+            timer,
             non_volatile_store,
         };
         ret
@@ -91,7 +61,7 @@ where
         defmt::write!(fmt, "LoraDevice")
     }
 }
-pub struct DeviceRng<'a>(Rng<'a, RNG>);
+pub struct DeviceRng<'a>(pub Rng<'a, RNG>);
 
 pub struct DeviceNonVolatileStore<'a> {
     flash: Flash<'a, Blocking>,
