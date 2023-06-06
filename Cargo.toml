@@ -6,9 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lorawan = { version = "0.1.0", path = "../lucasgranberg/lorawan", features = [
-    "defmt",
-] }
+lorawan = { version = "0.1.0", features = ["defmt"] }
 embassy-lora = { version = "0.1.0", path = "../embassy/embassy-lora", features = [
     "stm32wl",
     "time",
@@ -51,6 +49,7 @@ defmt-rtt = "0.4"
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
 cortex-m-rt = "0.7.3"
 embedded-hal = "0.2.7"
+embedded-hal-async = { version = "=0.2.0-alpha.1" }
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 panic-reset = { version = "0.1.1" }
 futures = { version = "0.3.25", default-features = false, features = [
@@ -58,4 +57,8 @@ futures = { version = "0.3.25", default-features = false, features = [
 ] }
 heapless = { version = "0.7.16", default-features = false }
 rand_core = { version = "0.6.2", default-features = false }
-lora-phy = { version = "1.1.0", git = "https://github.com/embassy-rs/lora-phy.git", rev = "a06b7fca9c97e811222b5120079d6d6fa44cfdf2" }
+lora-phy = { version = "1" }
+
+[patch.crates-io]
+lora-phy = { path = "../lora-phy" }
+lorawan = { path = "../lorawan" }
