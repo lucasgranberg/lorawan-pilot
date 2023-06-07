@@ -96,4 +96,12 @@ where
             Err(err) => Err(err),
         }
     }
+
+    async fn sleep(
+        &mut self,
+        warm_start: bool,
+    ) -> Result<(), <LoRaRadio<RK, DLY> as lorawan::device::radio::Radio>::Error> {
+        self.lora.sleep(warm_start).await?;
+        Ok(())
+    }
 }

@@ -23,7 +23,7 @@ use embassy_time::{Delay, Duration};
 use embedded_hal_async::delay::DelayUs;
 use lora_phy::{mod_params::BoardType, mod_traits::RadioKind, sx1261_2::SX1261_2, LoRa};
 use lora_radio::LoRaRadio;
-use lorawan::device::radio::types::RxQuality;
+use lorawan::device::radio::{types::RxQuality, Radio};
 use lorawan::device::Device;
 use lorawan::mac::region::channel_plan::dynamic::DynamicChannelPlan;
 use lorawan::mac::region::eu868::Eu868;
@@ -90,6 +90,7 @@ async fn main(_spawner: Spawner) {
                 Ok(res) => defmt::info!("Network joined! {:?}", res),
                 Err(e) => {
                     defmt::error!("Join failed {:?}", e);
+                    let _ignore_error = device.radio().sleep(false).await;
                     embassy_time::Timer::after(Duration::from_secs(600)).await;
                 }
             };
@@ -110,6 +111,7 @@ async fn main(_spawner: Spawner) {
                 }
             }
 
+            let _ignore_error = device.radio().sleep(false).await;
             embassy_time::Timer::after(Duration::from_secs(300)).await;
         }
     }
