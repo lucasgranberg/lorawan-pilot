@@ -90,7 +90,7 @@ async fn main(_spawner: Spawner) {
                 Ok(res) => defmt::info!("Network joined! {:?}", res),
                 Err(e) => {
                     defmt::error!("Join failed {:?}", e);
-                    let _ignore_error = device.radio().sleep(false).await;
+                    let _ignore_error = device.radio().sleep(true).await;
                     embassy_time::Timer::after(Duration::from_secs(600)).await;
                 }
             };
@@ -111,7 +111,7 @@ async fn main(_spawner: Spawner) {
                 }
             }
 
-            let _ignore_error = device.radio().sleep(false).await;
+            let _ignore_error = device.radio().sleep(true).await;
             embassy_time::Timer::after(Duration::from_secs(300)).await;
         }
     }
