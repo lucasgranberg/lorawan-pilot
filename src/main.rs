@@ -11,22 +11,23 @@ use defmt_rtt as _;
 use device::*;
 use embassy_executor::Spawner;
 use embassy_lora::iv::{InterruptHandler, Stm32wlInterfaceVariant};
-use embassy_stm32::{
-    bind_interrupts,
-    flash::Flash,
-    gpio::{Level, Output, Pin, Speed},
-    pac,
-    rng::Rng,
-    spi::Spi,
-};
+use embassy_stm32::flash::Flash;
+use embassy_stm32::gpio::{Level, Output, Pin, Speed};
+use embassy_stm32::rng::Rng;
+use embassy_stm32::spi::Spi;
+use embassy_stm32::{bind_interrupts, pac};
 use embassy_time::{Delay, Duration};
 use embedded_hal_async::delay::DelayUs;
-use lora_phy::{mod_params::BoardType, mod_traits::RadioKind, sx1261_2::SX1261_2, LoRa};
+use lora_phy::mod_params::BoardType;
+use lora_phy::mod_traits::RadioKind;
+use lora_phy::sx1261_2::SX1261_2;
+use lora_phy::LoRa;
 use lora_radio::LoRaRadio;
-use lorawan::device::radio::{types::RxQuality, Radio};
+use lorawan::device::radio::types::RxQuality;
+use lorawan::device::radio::Radio;
 use lorawan::device::Device;
-use lorawan::mac::region::channel_plan::dynamic::DynamicChannelPlan;
-use lorawan::mac::region::eu868::Eu868;
+use lorawan::mac::region::channel_plan::fixed::FixedChannelPlan;
+use lorawan::mac::region::us915::US915;
 use lorawan::mac::types::Credentials;
 use lorawan::mac::{Mac, MacDevice};
 #[cfg(debug_assertions)]
@@ -54,19 +55,11 @@ async fn main(_spawner: Spawner) {
     unsafe { pac::RCC.ccipr().modify(|w| w.set_rngsel(0b01)) }
 
     let lora = {
-        let spi = Spi::new_subghz(
-            peripherals.SUBGHZSPI,
-            peripherals.DMA1_CH2,
-            peripherals.DMA1_CH3,
-        );
+        let spi = Spi::new_subghz(peripherals.SUBGHZSPI, peripherals.DMA1_CH2, peripherals.DMA1_CH3);
         let iv = Stm32wlInterfaceVariant::new(
             Irqs,
             None,
-            Some(Output::new(
-                peripherals.PC5.degrade(),
-                Level::Low,
-                Speed::High,
-            )),
+            Some(Output::new(peripherals.PC5.degrade(), Level::Low, Speed::High)),
         )
         .unwrap();
 
@@ -97,9 +90,8 @@ async fn main(_spawner: Spawner) {
         }
         'sending: while mac.is_joined() {
             defmt::info!("SENDING");
-            let send_res: Result<Option<(usize, RxQuality)>, _> = mac
-                .send(&mut device, &mut radio_buffer, b"PING", 1, false, None)
-                .await;
+            let send_res: Result<Option<(usize, RxQuality)>, _> =
+                mac.send(&mut device, &mut radio_buffer, b"PING", 1, false, None).await;
             match send_res {
                 Ok(res) => defmt::info!("{:?}", res),
                 Err(e) => {
@@ -116,19 +108,16 @@ async fn main(_spawner: Spawner) {
         }
     }
 }
-pub fn get_mac<RK, DLY>(
-    device: &mut LoraDevice<'_, RK, DLY>,
-) -> Mac<Eu868, DeviceSpecs, DynamicChannelPlan<Eu868>>
+pub fn get_mac<RK, DLY>(device: &mut LoraDevice<'_, RK, DLY>) -> Mac<US915, DeviceSpecs, FixedChannelPlan<US915>>
 where
     RK: RadioKind,
     DLY: DelayUs,
 {
-    pub const DEVICE_ID_PTR: *const u8 = 0x1FFF_7580 as _;
-    let dev_eui: [u8; 8] = unsafe { *DEVICE_ID_PTR.cast::<[u8; 8]>() };
-    let app_eui: [u8; 8] = [0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01];
+    // TODO: Set up for specific device.
+    let dev_eui: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    let app_eui: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
     let app_key: [u8; 16] = [
-        0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6, 0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F,
-        0x3C,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ];
     defmt::info!(
         "deveui:\t{:X}-{:X}-{:X}-{:X}-{:X}-{:X}-{:X}-{:X}",
@@ -141,20 +130,17 @@ where
         dev_eui[1],
         dev_eui[0]
     );
-    let hydrate_res =
-        <LoraDevice<'_, RK, DLY> as MacDevice<Eu868, DeviceSpecs>>::hydrate_from_non_volatile(
-            device.non_volatile_store(),
-            app_eui,
-            dev_eui,
-            app_key,
-        );
+    let hydrate_res = <LoraDevice<'_, RK, DLY> as MacDevice<US915, DeviceSpecs>>::hydrate_from_non_volatile(
+        device.non_volatile_store(),
+        app_eui,
+        dev_eui,
+        app_key,
+    );
     match hydrate_res {
         Ok(_) => defmt::info!("credentials and configuration loaded from non volatile"),
         Err(_) => defmt::info!("credentials and configuration not found in non volatile"),
     };
-    let (configuration, credentials) = hydrate_res.unwrap_or((
-        Default::default(),
-        Credentials::new(app_eui, dev_eui, app_key),
-    ));
+    let (configuration, credentials) =
+        hydrate_res.unwrap_or((Default::default(), Credentials::new(app_eui, dev_eui, app_key)));
     Mac::new(configuration, credentials)
 }

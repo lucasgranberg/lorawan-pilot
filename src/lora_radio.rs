@@ -5,8 +5,9 @@
 // use super::Timings;
 
 use embedded_hal_async::delay::DelayUs;
+use lora_phy::mod_params::RadioError;
+use lora_phy::mod_traits::RadioKind;
 use lora_phy::LoRa;
-use lora_phy::{mod_params::RadioError, mod_traits::RadioKind};
 use lorawan::device::radio::types::RxQuality;
 use lorawan::device::radio::Radio;
 
@@ -45,25 +46,20 @@ where
         let sf = config.rf.data_rate.spreading_factor.into();
         let bw = config.rf.data_rate.bandwidth.into();
         let cr = config.rf.coding_rate.into();
-        let mdltn_params = self
+        let mdltn_params = self.lora.create_modulation_params(sf, bw, cr, config.rf.frequency)?;
+        let mut tx_pkt_params = self
             .lora
-            .create_modulation_params(sf, bw, cr, config.rf.frequency)?;
-        let mut tx_pkt_params =
-            self.lora
-                .create_tx_packet_params(8, false, true, false, &mdltn_params)?;
+            .create_tx_packet_params(8, false, true, false, &mdltn_params)?;
 
-        self.lora
-            .prepare_for_tx(&mdltn_params, config.pw.into(), false)
-            .await?;
-        self.lora
-            .tx(&mdltn_params, &mut tx_pkt_params, buf, 0xffffff)
-            .await?;
+        self.lora.prepare_for_tx(&mdltn_params, config.pw.into(), false).await?;
+        self.lora.tx(&mdltn_params, &mut tx_pkt_params, buf, 0xffffff).await?;
         Ok(0)
     }
 
     async fn rx(
         &mut self,
         config: lorawan::device::radio::types::RfConfig,
+        window_in_secs: u8,
         rx_buf: &mut [u8],
     ) -> Result<
         (usize, lorawan::device::radio::types::RxQuality),
@@ -72,21 +68,14 @@ where
         let sf = config.data_rate.spreading_factor.into();
         let bw = config.data_rate.bandwidth.into();
         let cr = config.coding_rate.into();
-        let mdltn_params = self
-            .lora
-            .create_modulation_params(sf, bw, cr, config.frequency)?;
-        let rx_pkt_params = self.lora.create_rx_packet_params(
-            8,
-            false,
-            rx_buf.len() as u8,
-            true,
-            true,
-            &mdltn_params,
-        )?;
+        let mdltn_params = self.lora.create_modulation_params(sf, bw, cr, config.frequency)?;
+        let rx_pkt_params =
+            self.lora
+                .create_rx_packet_params(8, false, rx_buf.len() as u8, true, true, &mdltn_params)?;
         self.lora
-            .prepare_for_rx(&mdltn_params, &rx_pkt_params, None, false, false, 12)
+            .prepare_for_rx(&mdltn_params, &rx_pkt_params, Some(window_in_secs), None, false)
             .await?;
-        match self.lora.rx(Some(1000), &rx_pkt_params, rx_buf).await {
+        match self.lora.rx(&rx_pkt_params, rx_buf).await {
             Ok((received_len, rx_pkt_status)) => {
                 Ok((
                     received_len as usize,
