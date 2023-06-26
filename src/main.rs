@@ -52,7 +52,7 @@ async fn main(_spawner: Spawner) {
     config.rcc.enable_lsi = true;
     let peripherals = embassy_stm32::init(config);
 
-    unsafe { pac::RCC.ccipr().modify(|w| w.set_rngsel(0b01)) }
+    pac::RCC.ccipr().modify(|w| w.set_rngsel(0b01));
 
     let lora = {
         let spi = Spi::new_subghz(peripherals.SUBGHZSPI, peripherals.DMA1_CH2, peripherals.DMA1_CH3);
