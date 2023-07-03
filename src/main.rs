@@ -26,8 +26,8 @@ use lora_radio::LoRaRadio;
 use lorawan::device::radio::types::RxQuality;
 use lorawan::device::radio::Radio;
 use lorawan::device::Device;
-use lorawan::mac::region::channel_plan::fixed::FixedChannelPlan;
-use lorawan::mac::region::us915::US915;
+use lorawan::mac::region::channel_plan::dynamic::{DynamicChannelPlan, FixedChannelList800};
+use lorawan::mac::region::eu868::EU868;
 use lorawan::mac::types::Credentials;
 use lorawan::mac::{Mac, MacDevice};
 #[cfg(debug_assertions)]
@@ -108,16 +108,18 @@ async fn main(_spawner: Spawner) {
         }
     }
 }
-pub fn get_mac<RK, DLY>(device: &mut LoraDevice<'_, RK, DLY>) -> Mac<US915, DeviceSpecs, FixedChannelPlan<US915>>
+pub fn get_mac<RK, DLY>(
+    device: &mut LoraDevice<'_, RK, DLY>,
+) -> Mac<EU868, DeviceSpecs, DynamicChannelPlan<EU868, FixedChannelList800<EU868>>>
 where
     RK: RadioKind,
     DLY: DelayUs,
 {
-    // TODO: Set up for specific device.
-    let dev_eui: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-    let app_eui: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    pub const DEVICE_ID_PTR: *const u8 = 0x1FFF_7580 as _;
+    let dev_eui: [u8; 8] = unsafe { *DEVICE_ID_PTR.cast::<[u8; 8]>() };
+    let app_eui: [u8; 8] = [0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01];
     let app_key: [u8; 16] = [
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6, 0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F, 0x3C,
     ];
     defmt::info!(
         "deveui:\t{:X}-{:X}-{:X}-{:X}-{:X}-{:X}-{:X}-{:X}",
@@ -130,7 +132,7 @@ where
         dev_eui[1],
         dev_eui[0]
     );
-    let hydrate_res = <LoraDevice<'_, RK, DLY> as MacDevice<US915, DeviceSpecs>>::hydrate_from_non_volatile(
+    let hydrate_res = <LoraDevice<'_, RK, DLY> as MacDevice<EU868, DeviceSpecs>>::hydrate_from_non_volatile(
         device.non_volatile_store(),
         app_eui,
         dev_eui,
