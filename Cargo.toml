@@ -6,25 +6,32 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lorawan = { version = "0.1.0", path = "../lucasgranberg/lorawan", features = [
+lorawan = { version = "0.1.0", git = "https://github.com/lucasgranberg/lorawan.git", features = [
     "defmt",
 ] }
-embassy-sync = { version = "0.2.0", path = "../embassy/embassy-sync", features = [
+embassy-lora = { version = "0.1.0", git = "https://github.com/lucasgranberg/embassy.git", rev = "2fe352272ad56a6ca30d0b7940c2660af67137a7", features = [
+    "stm32wl",
+    "time",
+] }
+embassy-sync = { version = "0.2.0", git = "https://github.com/lucasgranberg/embassy.git", rev = "2fe352272ad56a6ca30d0b7940c2660af67137a7", features = [
     "defmt",
 ] }
-embassy-executor = { version = "0.1.0", path = "../embassy/embassy-executor", features = [
+embassy-executor = { version = "0.2.0", git = "https://github.com/lucasgranberg/embassy.git", rev = "2fe352272ad56a6ca30d0b7940c2660af67137a7", features = [
     "defmt",
     "integrated-timers",
     "arch-cortex-m",
     "executor-thread",
     "executor-interrupt",
+    "nightly",
 ] }
-embassy-time = { version = "0.1.0", path = "../embassy/embassy-time", features = [
+embassy-time = { version = "0.1.0", git = "https://github.com/lucasgranberg/embassy.git", rev = "2fe352272ad56a6ca30d0b7940c2660af67137a7", features = [
     "defmt",
     "defmt-timestamp-uptime",
     "tick-hz-32_768",
+    "unstable-traits",
+    "nightly",
 ] }
-embassy-stm32 = { version = "0.1.0", path = "../embassy/embassy-stm32", features = [
+embassy-stm32 = { version = "0.1.0", git = "https://github.com/lucasgranberg/embassy.git", rev = "2fe352272ad56a6ca30d0b7940c2660af67137a7", features = [
     "nightly",
     "defmt",
     "time-driver-any",
@@ -34,8 +41,9 @@ embassy-stm32 = { version = "0.1.0", path = "../embassy/embassy-stm32", features
     "unstable-traits",
     "stm32wl55jc-cm4",
 ] }
-embassy-embedded-hal = { version = "0.1.0", path = "../embassy/embassy-embedded-hal" }
-embassy-hal-common = { version = "0.1.0", path = "../embassy/embassy-hal-common", default-features = false }
+embassy-embedded-hal = { version = "0.1.0", git = "https://github.com/lucasgranberg/embassy.git", rev = "2fe352272ad56a6ca30d0b7940c2660af67137a7" }
+embassy-hal-common = { version = "0.1.0", git = "https://github.com/lucasgranberg/embassy.git", rev = "2fe352272ad56a6ca30d0b7940c2660af67137a7", default-features = false }
+embedded-hal-async = { version = "=0.2.0-alpha.2" }
 
 embedded-storage = { version = "0.3.0", default-features = false }
 
@@ -52,4 +60,4 @@ futures = { version = "0.3.25", default-features = false, features = [
 ] }
 heapless = { version = "0.7.16", default-features = false }
 rand_core = { version = "0.6.2", default-features = false }
-lora-phy = "1.1.0"
+lora-phy = { version = "2" }
