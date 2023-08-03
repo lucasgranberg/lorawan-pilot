@@ -1,7 +1,7 @@
 use core::convert::Infallible;
 
 use embassy_lora::iv::{InterruptHandler, Stm32wlInterfaceVariant};
-use embassy_stm32::flash::{Blocking, Flash};
+use embassy_stm32::flash::{Bank1Region, Blocking, Flash, MAX_ERASE_SIZE};
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::peripherals::{PC4, RNG, SUBGHZSPI};
 use embassy_stm32::rng::Rng;
@@ -14,7 +14,9 @@ use lora_phy::LoRa;
 use lorawan::device::non_volatile_store::NonVolatileStore;
 use lorawan::device::Device;
 use lorawan::mac::region::Region;
+use lorawan::mac::types::Storable;
 use lorawan::mac::MacDevice;
+use postcard::{from_bytes, to_slice};
 
 use crate::lora_radio::LoRaRadio;
 use crate::timer::LoraTimer;
@@ -60,8 +62,11 @@ impl<'a> LoraDevice<'a> {
             .unwrap()
         };
         let radio = LoRaRadio::new(lora);
-        let non_volatile_store =
-            DeviceNonVolatileStore::new(Flash::new_blocking(peripherals.FLASH));
+        let non_volatile_store = DeviceNonVolatileStore::new(
+            Flash::new_blocking(peripherals.FLASH)
+                .into_blocking_regions()
+                .bank1_region,
+        );
         let ret = Self {
             rng: DeviceRng(Rng::new(peripherals.RNG)),
             radio,
@@ -79,11 +84,11 @@ impl<'d> defmt::Format for LoraDevice<'d> {
 pub struct DeviceRng<'a>(Rng<'a, RNG>);
 
 pub struct DeviceNonVolatileStore<'a> {
-    flash: Flash<'a, Blocking>,
+    flash: Bank1Region<'a, Blocking>,
     buf: [u8; 256],
 }
 impl<'a> DeviceNonVolatileStore<'a> {
-    pub fn new(flash: Flash<'a, Blocking>) -> Self {
+    pub fn new(flash: Bank1Region<'a, Blocking>) -> Self {
         Self {
             flash,
             buf: [0xFF; 256],
@@ -101,32 +106,22 @@ pub enum NonVolatileStoreError {
 impl<'m> NonVolatileStore for DeviceNonVolatileStore<'m> {
     type Error = NonVolatileStoreError;
 
-    fn save<'a, T>(&mut self, item: T) -> Result<(), Self::Error>
-    where
-        T: Sized + Into<&'a [u8]>,
-    {
-        self.buf = [0xFFu8; 256];
-        let offset = Self::offset();
+    fn save(&mut self, storable: Storable) -> Result<(), Self::Error> {
         self.flash
-            .blocking_erase(offset, offset + 2048)
+            .blocking_erase(Self::offset(), Self::offset() + MAX_ERASE_SIZE as u32)
             .map_err(NonVolatileStoreError::Flash)?;
-        self.buf[..core::mem::size_of::<T>()].copy_from_slice(item.into());
+        to_slice(&storable, self.buf.as_mut_slice())
+            .map_err(|_| NonVolatileStoreError::Encoding)?;
         self.flash
-            .blocking_write(offset, &self.buf)
+            .blocking_write(Self::offset(), &self.buf)
             .map_err(NonVolatileStoreError::Flash)
     }
 
-    fn load<'a, T>(&'a mut self) -> Result<T, Self::Error>
-    where
-        T: Sized + TryFrom<&'a [u8]>,
-    {
-        let offset = Self::offset();
+    fn load(&mut self) -> Result<Storable, Self::Error> {
         self.flash
-            .read(offset, &mut self.buf)
+            .blocking_read(Self::offset(), &mut self.buf.as_mut_slice())
             .map_err(NonVolatileStoreError::Flash)?;
-        self.buf[..core::mem::size_of::<T>()]
-            .try_into()
-            .map_err(|_| NonVolatileStoreError::Encoding)
+        from_bytes(&self.buf.as_mut_slice()).map_err(|_| NonVolatileStoreError::Encoding)
     }
 }
 

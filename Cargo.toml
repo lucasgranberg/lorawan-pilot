@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 lorawan = { version = "0.1.0", git = "https://github.com/lucasgranberg/lorawan.git", features = [
     "defmt",
+    "serde",
 ] }
 embassy-lora = { version = "0.1.0", git = "https://github.com/lucasgranberg/embassy.git", rev = "2fe352272ad56a6ca30d0b7940c2660af67137a7", features = [
     "stm32wl",
@@ -61,3 +62,5 @@ futures = { version = "0.3.25", default-features = false, features = [
 heapless = { version = "0.7.16", default-features = false }
 rand_core = { version = "0.6.2", default-features = false }
 lora-phy = { version = "2" }
+serde = { version = "1.0.163", default-features = false, features = ["derive"] }
+postcard = "1.0.4"
