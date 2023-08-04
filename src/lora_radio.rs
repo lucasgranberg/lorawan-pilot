@@ -140,7 +140,7 @@ impl<'d> Radio for LoRaRadio<'d> {
 
     async fn sleep(
         &mut self,
-        warm_start: bool,
+        _warm_start: bool,
     ) -> Result<(), <LoRaRadio<'d> as lorawan::device::radio::Radio>::Error> {
         Ok(())
     }

@@ -20,7 +20,7 @@ use device::*;
 use lorawan::mac::region::channel_plan::dynamic::DynamicChannelPlan;
 use lorawan::mac::region::eu868::EU868;
 use lorawan::mac::types::Credentials;
-use lorawan::mac::{Mac, MacDevice};
+use lorawan::mac::Mac;
 #[cfg(debug_assertions)]
 use panic_probe as _;
 // release profile: minimize the binary size of the application
@@ -71,7 +71,7 @@ async fn main(_spawner: Spawner) {
 }
 pub fn get_mac(
     device: &mut LoraDevice<'static>,
-) -> Mac<EU868, DeviceSpecs, DynamicChannelPlan<EU868>> {
+) -> Mac<EU868, LoraDevice<'static>, DynamicChannelPlan<EU868>> {
     pub const DEVICE_ID_PTR: *const u8 = 0x1FFF_7580 as _;
     let dev_eui: [u8; 8] = unsafe { *DEVICE_ID_PTR.cast::<[u8; 8]>() };
     let app_eui: [u8; 8] = [0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01];
@@ -90,13 +90,12 @@ pub fn get_mac(
         dev_eui[1],
         dev_eui[0]
     );
-    let hydrate_res =
-        <LoraDevice<'static> as MacDevice<EU868, DeviceSpecs>>::hydrate_from_non_volatile(
-            device.non_volatile_store(),
-            app_eui,
-            dev_eui,
-            app_key,
-        );
+    let hydrate_res = <LoraDevice<'static> as Device>::hydrate_from_non_volatile(
+        device.non_volatile_store(),
+        app_eui,
+        dev_eui,
+        app_key,
+    );
     match hydrate_res {
         Ok(_) => defmt::info!("credentials and configuration loaded from non volatile"),
         Err(_) => defmt::info!("credentials and configuration not found in non volatile"),

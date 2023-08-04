@@ -673,7 +673,6 @@ dependencies = [
 [[package]]
 name = "lorawan"
 version = "0.1.0"
-source = "git+https://github.com/lucasgranberg/lorawan.git#6d8bbf91f3b00becae9704995c0dfb19e1f65d5b"
 dependencies = [
  "aes",
  "as-slice",
