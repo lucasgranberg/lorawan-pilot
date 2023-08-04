@@ -69,9 +69,7 @@ async fn main(_spawner: Spawner) {
         }
     }
 }
-pub fn get_mac(
-    device: &mut LoraDevice<'static>,
-) -> Mac<EU868, LoraDevice<'static>, DynamicChannelPlan<EU868>> {
+pub fn get_mac(device: &mut LoraDevice<'static>) -> Mac<EU868, DynamicChannelPlan<EU868>> {
     pub const DEVICE_ID_PTR: *const u8 = 0x1FFF_7580 as _;
     let dev_eui: [u8; 8] = unsafe { *DEVICE_ID_PTR.cast::<[u8; 8]>() };
     let app_eui: [u8; 8] = [0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01];

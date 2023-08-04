@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lorawan = { version = "0.1.0", path = "../lucasgranberg/lorawan", features = [
+lorawan = { version = "0.1.0", git = "https://github.com/lucasgranberg/lorawan.git", features = [
     "defmt",
     "serde",
 ] }
