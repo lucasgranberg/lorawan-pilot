@@ -13,9 +13,7 @@ use lora_phy::sx1261_2::SX1261_2;
 use lora_phy::LoRa;
 use lorawan::device::non_volatile_store::NonVolatileStore;
 use lorawan::device::Device;
-use lorawan::mac::region::Region;
 use lorawan::mac::types::Storable;
-use lorawan::mac::MacDevice;
 use postcard::{from_bytes, to_slice};
 
 use crate::lora_radio::LoRaRadio;
@@ -177,7 +175,3 @@ impl<'a> Device for LoraDevice<'a> {
         None
     }
 }
-impl<'a, R> MacDevice<R, DeviceSpecs> for LoraDevice<'a> where R: Region {}
-
-pub struct DeviceSpecs;
-impl lorawan::device::DeviceSpecs for DeviceSpecs {}
