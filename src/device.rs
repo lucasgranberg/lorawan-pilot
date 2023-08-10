@@ -148,4 +148,8 @@ impl<'a> Device for LoraDevice<'a> {
     fn battery_level(&self) -> Option<f32> {
         None
     }
+
+    fn preferred_join_channel_block_index() -> usize {
+        1
+    }
 }
