@@ -69,9 +69,9 @@ debug = 2
 
 [patch.crates-io]
 lorawan = { git = "https://github.com/lucasgranberg/lorawan.git", rev = "24fde1759aa0c7a3bcfcd32ec40a00175b0c977e" }
-embassy-lora = { git = "https://github.com/ceekdee/embassy.git", rev = "c3e33cc48377721fbf1f029010b50765b805d97b" }
-embassy-sync = { git = "https://github.com/ceekdee/embassy.git", rev = "c3e33cc48377721fbf1f029010b50765b805d97b" }
-embassy-executor = { git = "https://github.com/ceekdee/embassy.git", rev = "c3e33cc48377721fbf1f029010b50765b805d97b" }
-embassy-time = { git = "https://github.com/ceekdee/embassy.git", rev = "c3e33cc48377721fbf1f029010b50765b805d97b" }
-embassy-stm32 = { git = "https://github.com/ceekdee/embassy.git", rev = "c3e33cc48377721fbf1f029010b50765b805d97b" }
-embassy-embedded-hal = { git = "https://github.com/ceekdee/embassy.git", rev = "c3e33cc48377721fbf1f029010b50765b805d97b" }
+embassy-lora = { git = "https://github.com/ceekdee/embassy.git", rev = "24d3aed7ecb06007ba3d65f1b76dfe7bd57b3b87" }
+embassy-sync = { git = "https://github.com/ceekdee/embassy.git", rev = "24d3aed7ecb06007ba3d65f1b76dfe7bd57b3b87" }
+embassy-executor = { git = "https://github.com/ceekdee/embassy.git", rev = "24d3aed7ecb06007ba3d65f1b76dfe7bd57b3b87" }
+embassy-time = { git = "https://github.com/ceekdee/embassy.git", rev = "24d3aed7ecb06007ba3d65f1b76dfe7bd57b3b87" }
+embassy-stm32 = { git = "https://github.com/ceekdee/embassy.git", rev = "24d3aed7ecb06007ba3d65f1b76dfe7bd57b3b87" }
+embassy-embedded-hal = { git = "https://github.com/ceekdee/embassy.git", rev = "24d3aed7ecb06007ba3d65f1b76dfe7bd57b3b87" }
