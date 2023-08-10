@@ -3,6 +3,7 @@
 #![macro_use]
 #![feature(type_alias_impl_trait)]
 #![deny(elided_lifetimes_in_paths)]
+#![feature(impl_trait_in_assoc_type)]
 #![feature(async_fn_in_trait)]
 
 use embassy_executor::Spawner;
@@ -17,8 +18,8 @@ mod timer;
 
 use defmt_rtt as _;
 use device::*;
-use lorawan::mac::region::channel_plan::dynamic::DynamicChannelPlan;
-use lorawan::mac::region::eu868::EU868;
+use lorawan::mac::region::channel_plan::fixed::FixedChannelPlan;
+use lorawan::mac::region::us915::US915;
 use lorawan::mac::types::Credentials;
 use lorawan::mac::Mac;
 #[cfg(debug_assertions)]
@@ -51,9 +52,8 @@ async fn main(_spawner: Spawner) {
         }
         'sending: while mac.is_joined() {
             defmt::info!("SENDING");
-            let send_res: Result<Option<(usize, RxQuality)>, _> = mac
-                .send(&mut device, &mut radio_buffer, b"PING", 1, false, None)
-                .await;
+            let send_res: Result<Option<(usize, RxQuality)>, _> =
+                mac.send(&mut device, &mut radio_buffer, b"PING", 1, false, None).await;
             match send_res {
                 Ok(res) => defmt::info!("{:?}", res),
                 Err(e) => {
@@ -69,25 +69,11 @@ async fn main(_spawner: Spawner) {
         }
     }
 }
-pub fn get_mac(device: &mut LoraDevice<'static>) -> Mac<EU868, DynamicChannelPlan<EU868>> {
-    pub const DEVICE_ID_PTR: *const u8 = 0x1FFF_7580 as _;
-    let dev_eui: [u8; 8] = unsafe { *DEVICE_ID_PTR.cast::<[u8; 8]>() };
-    let app_eui: [u8; 8] = [0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01];
-    let app_key: [u8; 16] = [
-        0x2B, 0x7E, 0x15, 0x16, 0x28, 0xAE, 0xD2, 0xA6, 0xAB, 0xF7, 0x15, 0x88, 0x09, 0xCF, 0x4F,
-        0x3C,
-    ];
-    defmt::info!(
-        "deveui:\t{:X}-{:X}-{:X}-{:X}-{:X}-{:X}-{:X}-{:X}",
-        dev_eui[7],
-        dev_eui[6],
-        dev_eui[5],
-        dev_eui[4],
-        dev_eui[3],
-        dev_eui[2],
-        dev_eui[1],
-        dev_eui[0]
-    );
+pub fn get_mac(device: &mut LoraDevice<'static>) -> Mac<US915, FixedChannelPlan<US915>> {
+    let dev_eui: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    let app_eui: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    let app_key: [u8; 16] =
+        [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
     let hydrate_res = <LoraDevice<'static> as Device>::hydrate_from_non_volatile(
         device.non_volatile_store(),
         app_eui,
@@ -98,9 +84,7 @@ pub fn get_mac(device: &mut LoraDevice<'static>) -> Mac<EU868, DynamicChannelPla
         Ok(_) => defmt::info!("credentials and configuration loaded from non volatile"),
         Err(_) => defmt::info!("credentials and configuration not found in non volatile"),
     };
-    let (configuration, credentials) = hydrate_res.unwrap_or((
-        Default::default(),
-        Credentials::new(app_eui, dev_eui, app_key),
-    ));
+    let (configuration, credentials) =
+        hydrate_res.unwrap_or((Default::default(), Credentials::new(app_eui, dev_eui, app_key)));
     Mac::new(configuration, credentials)
 }
