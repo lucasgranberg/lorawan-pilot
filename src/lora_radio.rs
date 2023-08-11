@@ -75,6 +75,6 @@ impl<'d> Radio for LoRaRadio<'d> {
         &mut self,
         _warm_start: bool,
     ) -> Result<(), <LoRaRadio<'d> as lorawan::device::radio::Radio>::Error> {
-        Ok(())
+        self.lora.sleep(false).await
     }
 }

@@ -68,7 +68,7 @@ postcard = "1.0.4"
 debug = 2
 
 [patch.crates-io]
-lorawan = { git = "https://github.com/lucasgranberg/lorawan.git", rev = "24fde1759aa0c7a3bcfcd32ec40a00175b0c977e" }
+lorawan = { git = "https://github.com/lucasgranberg/lorawan.git", rev = "0415e0d9d9249002fea31c83ddf153b6aa88df85" }
 embassy-lora = { git = "https://github.com/ceekdee/embassy.git", rev = "24d3aed7ecb06007ba3d65f1b76dfe7bd57b3b87" }
 embassy-sync = { git = "https://github.com/ceekdee/embassy.git", rev = "24d3aed7ecb06007ba3d65f1b76dfe7bd57b3b87" }
 embassy-executor = { git = "https://github.com/ceekdee/embassy.git", rev = "24d3aed7ecb06007ba3d65f1b76dfe7bd57b3b87" }
