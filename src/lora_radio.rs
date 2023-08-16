@@ -38,13 +38,14 @@ where
         config: lorawan::device::radio::types::TxConfig,
         buf: &[u8],
     ) -> Result<usize, <LoraRadio<RK, DLY> as lorawan::device::radio::Radio>::Error> {
+        let lora = &mut self.0;
         let sf = config.rf.data_rate.spreading_factor.into();
         let bw = config.rf.data_rate.bandwidth.into();
         let cr = config.rf.coding_rate.into();
-        let mdltn_params = self.0.create_modulation_params(sf, bw, cr, config.rf.frequency)?;
-        let mut tx_pkt_params = self.0.create_tx_packet_params(8, false, true, false, &mdltn_params)?;
-        self.0.prepare_for_tx(&mdltn_params, config.pw.into(), false).await?;
-        self.0.tx(&mdltn_params, &mut tx_pkt_params, buf, 0xffffff).await?;
+        let mdltn_params = lora.create_modulation_params(sf, bw, cr, config.rf.frequency)?;
+        let mut tx_pkt_params = lora.create_tx_packet_params(8, false, true, false, &mdltn_params)?;
+        lora.prepare_for_tx(&mdltn_params, config.pw.into(), false).await?;
+        lora.tx(&mdltn_params, &mut tx_pkt_params, buf, 0xffffff).await?;
         Ok(0)
     }
 
@@ -57,13 +58,14 @@ where
         (usize, lorawan::device::radio::types::RxQuality),
         <LoraRadio<RK, DLY> as lorawan::device::radio::Radio>::Error,
     > {
+        let lora = &mut self.0;
         let sf = config.data_rate.spreading_factor.into();
         let bw = config.data_rate.bandwidth.into();
         let cr = config.coding_rate.into();
-        let mdltn_params = self.0.create_modulation_params(sf, bw, cr, config.frequency)?;
-        let rx_pkt_params = self.0.create_rx_packet_params(8, false, rx_buf.len() as u8, true, true, &mdltn_params)?;
-        self.0.prepare_for_rx(&mdltn_params, &rx_pkt_params, Some(window_in_secs), None, true).await?;
-        match self.0.rx(&rx_pkt_params, rx_buf).await {
+        let mdltn_params = lora.create_modulation_params(sf, bw, cr, config.frequency)?;
+        let rx_pkt_params = lora.create_rx_packet_params(8, false, rx_buf.len() as u8, true, true, &mdltn_params)?;
+        lora.prepare_for_rx(&mdltn_params, &rx_pkt_params, Some(window_in_secs), None, true).await?;
+        match lora.rx(&rx_pkt_params, rx_buf).await {
             Ok((received_len, rx_pkt_status)) => {
                 Ok((
                     received_len as usize,
@@ -78,6 +80,7 @@ where
         &mut self,
         _warm_start: bool,
     ) -> Result<(), <LoraRadio<RK, DLY> as lorawan::device::radio::Radio>::Error> {
-        self.0.sleep(false).await
+        let lora = &mut self.0;
+        lora.sleep(false).await
     }
 }

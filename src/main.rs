@@ -109,7 +109,12 @@ async fn main(_spawner: Spawner) {
                 }
             }
 
-            embassy_time::Timer::after(Duration::from_secs(300)).await;
+            match device.radio().0.sleep(false).await {
+                Ok(()) => {}
+                Err(e) => defmt::error!("Radio sleep failed with error {:?}", e),
+            }
+
+            embassy_time::Timer::after(Duration::from_secs(60)).await;
         }
     }
 }
