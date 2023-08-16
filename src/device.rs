@@ -1,116 +1,57 @@
 use core::convert::Infallible;
 
-use embassy_lora::iv::{InterruptHandler, Stm32wlInterfaceVariant};
-use embassy_stm32::flash::{Bank1Region, Blocking, Flash, MAX_ERASE_SIZE};
-use embassy_stm32::gpio::{Level, Output, Speed};
-use embassy_stm32::peripherals::{PC4, RNG, SUBGHZSPI};
-use embassy_stm32::rng::{self, Rng};
-use embassy_stm32::spi::Spi;
-use embassy_stm32::{bind_interrupts, pac, peripherals, Peripherals};
-use embassy_time::Delay;
-use lora_phy::mod_params::BoardType;
-use lora_phy::sx1261_2::SX1261_2;
-use lora_phy::LoRa;
+use embassy_stm32::flash::{Bank1Region, Blocking, MAX_ERASE_SIZE};
+use embassy_stm32::pac;
+use embassy_stm32::peripherals::RNG;
+use embassy_stm32::rng::Rng;
+use embassy_time::{Duration, Instant, Timer};
+use embedded_hal_async::delay::DelayUs;
+use futures::Future;
+use lora_phy::mod_traits::RadioKind;
 use lorawan::device::non_volatile_store::NonVolatileStore;
 use lorawan::device::Device;
 use lorawan::mac::types::Storable;
 use postcard::{from_bytes, to_slice};
 use rand_core::RngCore;
 
-use crate::lora_radio::LoRaRadio;
-use crate::timer::LoraTimer;
-
-bind_interrupts!(struct Irqs{
-    SUBGHZ_RADIO => InterruptHandler;
-    RNG => rng::InterruptHandler<peripherals::RNG>;
-});
+use crate::lora_radio::LoraRadio;
 
 extern "C" {
     static __storage: u8;
 }
-pub struct LoraDevice<'d> {
-    rng: DeviceRng<'d>,
-    radio: LoRaRadio<'d>,
+pub struct LoraDevice<'a, RK, DLY>
+where
+    RK: RadioKind,
+    DLY: DelayUs,
+{
+    radio: LoraRadio<RK, DLY>,
+    rng: DeviceRng<'a>,
     timer: LoraTimer,
-    non_volatile_store: DeviceNonVolatileStore<'d>,
+    non_volatile_store: DeviceNonVolatileStore<'a>,
 }
-impl<'a> LoraDevice<'a> {
-    pub async fn new(peripherals: Peripherals) -> LoraDevice<'a> {
-        let lora: LoRa<SX1261_2<Spi<'a, SUBGHZSPI, _, _>, Stm32wlInterfaceVariant<Output<'a, PC4>>>, Delay> = {
-            let spi = Spi::new_subghz(peripherals.SUBGHZSPI, peripherals.DMA1_CH2, peripherals.DMA1_CH3);
-            let iv =
-                Stm32wlInterfaceVariant::new(Irqs, None, Some(Output::new(peripherals.PC4, Level::Low, Speed::High)))
-                    .unwrap();
-
-            LoRa::new(SX1261_2::new(BoardType::Stm32wlSx1262, spi, iv), true, Delay).await.unwrap()
-        };
-        let radio = LoRaRadio::new(lora);
-        let non_volatile_store =
-            DeviceNonVolatileStore::new(Flash::new_blocking(peripherals.FLASH).into_blocking_regions().bank1_region);
-        let ret = Self {
-            rng: DeviceRng(Rng::new(peripherals.RNG, Irqs)),
-            radio,
-            timer: LoraTimer::new(),
-            non_volatile_store,
-        };
-        ret
-    }
-}
-impl<'d> defmt::Format for LoraDevice<'d> {
-    fn format(&self, fmt: defmt::Formatter<'_>) {
-        defmt::write!(fmt, "LoraDevice")
-    }
-}
-pub struct DeviceRng<'a>(Rng<'a, RNG>);
-
-pub struct DeviceNonVolatileStore<'a> {
-    flash: Bank1Region<'a, Blocking>,
-    buf: [u8; 256],
-}
-impl<'a> DeviceNonVolatileStore<'a> {
-    pub fn new(flash: Bank1Region<'a, Blocking>) -> Self {
-        Self { flash, buf: [0xFF; 256] }
-    }
-    pub fn offset() -> u32 {
-        (unsafe { &__storage as *const u8 as u32 }) - pac::FLASH_BASE as u32
-    }
-}
-#[derive(Debug, PartialEq, defmt::Format)]
-pub enum NonVolatileStoreError {
-    Flash(embassy_stm32::flash::Error),
-    Encoding,
-}
-impl<'m> NonVolatileStore for DeviceNonVolatileStore<'m> {
-    type Error = NonVolatileStoreError;
-
-    fn save(&mut self, storable: Storable) -> Result<(), Self::Error> {
-        self.flash
-            .blocking_erase(Self::offset(), Self::offset() + MAX_ERASE_SIZE as u32)
-            .map_err(NonVolatileStoreError::Flash)?;
-        to_slice(&storable, self.buf.as_mut_slice()).map_err(|_| NonVolatileStoreError::Encoding)?;
-        self.flash.blocking_write(Self::offset(), &self.buf).map_err(NonVolatileStoreError::Flash)
-    }
-
-    fn load(&mut self) -> Result<Storable, Self::Error> {
-        self.flash.blocking_read(Self::offset(), self.buf.as_mut_slice()).map_err(NonVolatileStoreError::Flash)?;
-        from_bytes(self.buf.as_mut_slice()).map_err(|_| NonVolatileStoreError::Encoding)
+impl<'a, RK, DLY> LoraDevice<'a, RK, DLY>
+where
+    RK: RadioKind,
+    DLY: DelayUs,
+{
+    pub fn new(
+        radio: LoraRadio<RK, DLY>,
+        rng: DeviceRng<'a>,
+        timer: LoraTimer,
+        non_volatile_store: DeviceNonVolatileStore<'a>,
+    ) -> LoraDevice<'a, RK, DLY> {
+        Self { radio, rng, timer, non_volatile_store }
     }
 }
 
-impl<'a> lorawan::device::rng::Rng for DeviceRng<'a> {
-    type Error = Infallible;
-
-    fn next_u32(&mut self) -> Result<u32, Self::Error> {
-        Ok(self.0.next_u32())
-    }
-}
-impl<'a> Device for LoraDevice<'a> {
-    type Timer = LoraTimer;
-
-    type Radio = LoRaRadio<'a>;
-
+impl<'a, RK, DLY> Device for LoraDevice<'a, RK, DLY>
+where
+    RK: RadioKind,
+    DLY: DelayUs,
+{
+    type Radio = LoraRadio<RK, DLY>;
     type Rng = DeviceRng<'a>;
-
+    type Timer = LoraTimer;
     type NonVolatileStore = DeviceNonVolatileStore<'a>;
 
     fn timer(&mut self) -> &mut Self::Timer {
@@ -151,5 +92,92 @@ impl<'a> Device for LoraDevice<'a> {
 
     fn preferred_join_channel_block_index() -> usize {
         1
+    }
+}
+
+impl<'a, RK, DLY> defmt::Format for LoraDevice<'a, RK, DLY>
+where
+    RK: RadioKind,
+    DLY: DelayUs,
+{
+    fn format(&self, fmt: defmt::Formatter<'_>) {
+        defmt::write!(fmt, "LoraDevice")
+    }
+}
+
+pub struct DeviceRng<'a>(pub(crate) Rng<'a, RNG>);
+
+impl<'a> lorawan::device::rng::Rng for DeviceRng<'a> {
+    type Error = Infallible;
+
+    fn next_u32(&mut self) -> Result<u32, Self::Error> {
+        Ok(self.0.next_u32())
+    }
+}
+
+pub struct LoraTimer {
+    start: Instant,
+}
+impl LoraTimer {
+    pub fn new() -> Self {
+        Self { start: Instant::now() }
+    }
+}
+
+impl Default for LoraTimer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl lorawan::device::timer::Timer for LoraTimer {
+    type Error = Infallible;
+
+    fn reset(&mut self) {
+        self.start = Instant::now();
+    }
+
+    type AtFuture<'a> = impl Future<Output = ()> + 'a where Self: 'a;
+
+    fn at<'a>(&self, millis: u64) -> Result<Self::AtFuture<'a>, Self::Error> {
+        let start = self.start;
+        let fut = async move {
+            Timer::at(start + Duration::from_millis(millis)).await;
+        };
+        Ok(fut) as Result<Self::AtFuture<'a>, Infallible>
+    }
+}
+
+pub struct DeviceNonVolatileStore<'a> {
+    flash: Bank1Region<'a, Blocking>,
+    buf: [u8; 256],
+}
+impl<'a> DeviceNonVolatileStore<'a> {
+    pub fn new(flash: Bank1Region<'a, Blocking>) -> Self {
+        Self { flash, buf: [0xFF; 256] }
+    }
+    pub fn offset() -> u32 {
+        (unsafe { &__storage as *const u8 as u32 }) - pac::FLASH_BASE as u32
+    }
+}
+#[derive(Debug, PartialEq, defmt::Format)]
+pub enum NonVolatileStoreError {
+    Flash(embassy_stm32::flash::Error),
+    Encoding,
+}
+impl<'a> NonVolatileStore for DeviceNonVolatileStore<'a> {
+    type Error = NonVolatileStoreError;
+
+    fn save(&mut self, storable: Storable) -> Result<(), Self::Error> {
+        self.flash
+            .blocking_erase(Self::offset(), Self::offset() + MAX_ERASE_SIZE as u32)
+            .map_err(NonVolatileStoreError::Flash)?;
+        to_slice(&storable, self.buf.as_mut_slice()).map_err(|_| NonVolatileStoreError::Encoding)?;
+        self.flash.blocking_write(Self::offset(), &self.buf).map_err(NonVolatileStoreError::Flash)
+    }
+
+    fn load(&mut self) -> Result<Storable, Self::Error> {
+        self.flash.blocking_read(Self::offset(), self.buf.as_mut_slice()).map_err(NonVolatileStoreError::Flash)?;
+        from_bytes(self.buf.as_mut_slice()).map_err(|_| NonVolatileStoreError::Encoding)
     }
 }

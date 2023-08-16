@@ -1,46 +1,50 @@
-use embassy_lora::iv::Stm32wlInterfaceVariant;
-use embassy_stm32::gpio::Output;
-use embassy_stm32::peripherals::{DMA1_CH2, DMA1_CH3, PC4, SUBGHZSPI};
-use embassy_stm32::spi::Spi;
-use embassy_time::Delay;
+use embedded_hal_async::delay::DelayUs;
 use lora_phy::mod_params::RadioError;
-use lora_phy::sx1261_2::SX1261_2;
+use lora_phy::mod_traits::RadioKind;
 use lora_phy::LoRa;
 use lorawan::device::radio::types::RxQuality;
 use lorawan::device::radio::Radio;
 
-/// LoRa radio using the physical layer API in the external lora-phy crate
-pub struct LoRaRadio<'d> {
-    #[allow(clippy::type_complexity)]
-    pub(crate) lora:
-        LoRa<SX1261_2<Spi<'d, SUBGHZSPI, DMA1_CH2, DMA1_CH3>, Stm32wlInterfaceVariant<Output<'d, PC4>>>, Delay>,
-}
+use crate::device::{DeviceNonVolatileStore, DeviceRng, LoraDevice, LoraTimer};
 
-impl<'d> LoRaRadio<'d> {
-    #[allow(clippy::type_complexity)]
-    pub fn new(
-        lora: LoRa<SX1261_2<Spi<'d, SUBGHZSPI, DMA1_CH2, DMA1_CH3>, Stm32wlInterfaceVariant<Output<'d, PC4>>>, Delay>,
-    ) -> Self {
-        Self { lora }
+/// LoRa radio using the physical layer API in the external lora-phy crate.
+pub struct LoraRadio<RK: RadioKind, DLY: DelayUs>(pub(crate) LoRa<RK, DLY>);
+
+impl<RK, DLY> LoraRadio<RK, DLY>
+where
+    RK: RadioKind,
+    DLY: DelayUs,
+{
+    pub fn new_device<'a>(
+        radio: LoraRadio<RK, DLY>,
+        rng: DeviceRng<'a>,
+        timer: LoraTimer,
+        non_volatile_store: DeviceNonVolatileStore<'a>,
+    ) -> LoraDevice<'a, RK, DLY> {
+        LoraDevice::<'a, RK, DLY>::new(radio, rng, timer, non_volatile_store)
     }
 }
 
 /// Provide the LoRa physical layer rx/tx interface for boards supported by the external lora-phy crate
-impl<'d> Radio for LoRaRadio<'d> {
+impl<RK, DLY> Radio for LoraRadio<RK, DLY>
+where
+    RK: RadioKind,
+    DLY: DelayUs,
+{
     type Error = RadioError;
 
     async fn tx(
         &mut self,
         config: lorawan::device::radio::types::TxConfig,
         buf: &[u8],
-    ) -> Result<usize, <LoRaRadio<'d> as lorawan::device::radio::Radio>::Error> {
+    ) -> Result<usize, <LoraRadio<RK, DLY> as lorawan::device::radio::Radio>::Error> {
         let sf = config.rf.data_rate.spreading_factor.into();
         let bw = config.rf.data_rate.bandwidth.into();
         let cr = config.rf.coding_rate.into();
-        let mdltn_params = self.lora.create_modulation_params(sf, bw, cr, config.rf.frequency)?;
-        let mut tx_pkt_params = self.lora.create_tx_packet_params(8, false, true, false, &mdltn_params)?;
-        self.lora.prepare_for_tx(&mdltn_params, config.pw.into(), false).await?;
-        self.lora.tx(&mdltn_params, &mut tx_pkt_params, buf, 0xffffff).await?;
+        let mdltn_params = self.0.create_modulation_params(sf, bw, cr, config.rf.frequency)?;
+        let mut tx_pkt_params = self.0.create_tx_packet_params(8, false, true, false, &mdltn_params)?;
+        self.0.prepare_for_tx(&mdltn_params, config.pw.into(), false).await?;
+        self.0.tx(&mdltn_params, &mut tx_pkt_params, buf, 0xffffff).await?;
         Ok(0)
     }
 
@@ -51,16 +55,15 @@ impl<'d> Radio for LoRaRadio<'d> {
         rx_buf: &mut [u8],
     ) -> Result<
         (usize, lorawan::device::radio::types::RxQuality),
-        <LoRaRadio<'d> as lorawan::device::radio::Radio>::Error,
+        <LoraRadio<RK, DLY> as lorawan::device::radio::Radio>::Error,
     > {
         let sf = config.data_rate.spreading_factor.into();
         let bw = config.data_rate.bandwidth.into();
         let cr = config.coding_rate.into();
-        let mdltn_params = self.lora.create_modulation_params(sf, bw, cr, config.frequency)?;
-        let rx_pkt_params =
-            self.lora.create_rx_packet_params(8, false, rx_buf.len() as u8, true, true, &mdltn_params)?;
-        self.lora.prepare_for_rx(&mdltn_params, &rx_pkt_params, Some(window_in_secs), None, true).await?;
-        match self.lora.rx(&rx_pkt_params, rx_buf).await {
+        let mdltn_params = self.0.create_modulation_params(sf, bw, cr, config.frequency)?;
+        let rx_pkt_params = self.0.create_rx_packet_params(8, false, rx_buf.len() as u8, true, true, &mdltn_params)?;
+        self.0.prepare_for_rx(&mdltn_params, &rx_pkt_params, Some(window_in_secs), None, true).await?;
+        match self.0.rx(&rx_pkt_params, rx_buf).await {
             Ok((received_len, rx_pkt_status)) => {
                 Ok((
                     received_len as usize,
@@ -74,7 +77,7 @@ impl<'d> Radio for LoRaRadio<'d> {
     async fn sleep(
         &mut self,
         _warm_start: bool,
-    ) -> Result<(), <LoRaRadio<'d> as lorawan::device::radio::Radio>::Error> {
-        self.lora.sleep(false).await
+    ) -> Result<(), <LoraRadio<RK, DLY> as lorawan::device::radio::Radio>::Error> {
+        self.0.sleep(false).await
     }
 }
