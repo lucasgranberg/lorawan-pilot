@@ -88,12 +88,7 @@ pub fn get_mac(device: &mut LoraDevice<'static>) -> Mac<EU868, DynamicChannelPla
         dev_eui[1],
         dev_eui[0]
     );
-    let hydrate_res = <LoraDevice<'static> as Device>::hydrate_from_non_volatile(
-        device.non_volatile_store(),
-        app_eui,
-        dev_eui,
-        app_key,
-    );
+    let hydrate_res = device.hydrate_from_non_volatile(app_eui, dev_eui, app_key);
     match hydrate_res {
         Ok(_) => defmt::info!("credentials and configuration loaded from non volatile"),
         Err(_) => defmt::info!("credentials and configuration not found in non volatile"),
