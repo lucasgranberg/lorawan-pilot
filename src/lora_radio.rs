@@ -7,7 +7,7 @@ use lorawan::device::radio::Radio;
 
 use crate::device::{DeviceNonVolatileStore, DeviceRng, LoraDevice, LoraTimer};
 
-/// LoRa radio using the physical layer API in the external lora-phy crate.
+/// Provides the LoRa radio using the physical layer API in the external lora-phy crate.
 pub struct LoraRadio<RK: RadioKind, DLY: DelayUs>(pub(crate) LoRa<RK, DLY>);
 
 impl<RK, DLY> LoraRadio<RK, DLY>
@@ -53,7 +53,7 @@ where
     }
 }
 
-/// Provide the LoRa physical layer rx/tx interface for boards supported by the external lora-phy crate
+/// Provides the LoRa physical layer rx/tx interface for boards supported by the external lora-phy crate
 impl<RK, DLY> Radio for LoraRadio<RK, DLY>
 where
     RK: RadioKind,

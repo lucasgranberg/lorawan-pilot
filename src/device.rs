@@ -19,6 +19,8 @@ use crate::lora_radio::LoraRadio;
 extern "C" {
     static __storage: u8;
 }
+/// Provides the embedded framework/MCU/LoRa board-specific functionality required by the LoRaWAN layer, which remains
+/// agnostic to which embedded framework/MCU/LoRa board is used.
 pub struct LoraDevice<'a, RK, DLY>
 where
     RK: RadioKind,
@@ -90,6 +92,13 @@ where
         None
     }
 
+    // TODO - if an 8 channel gateway is the only gateway available, determine which
+    // channel block (also known as sub-band) is supported and provide the index of that
+    // channel block here.  There are 10 8-channel channel blocks for the US915 region.
+    // If the second channel block is supported by the gateway, its zero-based index is 1.
+    //
+    // If the gateway network supports a range of join channels, this function may be removed
+    // to allow the default join channel selection to be used.
     fn preferred_join_channel_block_index() -> usize {
         1
     }
@@ -105,6 +114,7 @@ where
     }
 }
 
+/// Provides the embedded framework/MCU random number generation facility.
 pub struct DeviceRng<'a>(pub(crate) Rng<'a, RNG>);
 
 impl<'a> lorawan::device::rng::Rng for DeviceRng<'a> {
@@ -115,6 +125,7 @@ impl<'a> lorawan::device::rng::Rng for DeviceRng<'a> {
     }
 }
 
+/// Provides the embedded framework/MCU timer facility.
 pub struct LoraTimer {
     start: Instant,
 }
@@ -148,6 +159,9 @@ impl lorawan::device::timer::Timer for LoraTimer {
     }
 }
 
+/// Provides the embedded framework/MCU non-volatile storage facility to enable
+/// power-down/power-up operations for low battery usage when the LoRaWAN end device
+/// only needs to do sporadic transmissions from remote locations.
 pub struct DeviceNonVolatileStore<'a> {
     flash: Bank1Region<'a, Blocking>,
     buf: [u8; 256],

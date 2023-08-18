@@ -5,6 +5,8 @@
 #![deny(elided_lifetimes_in_paths)]
 #![feature(impl_trait_in_assoc_type)]
 #![feature(async_fn_in_trait)]
+#![warn(missing_docs)]
+#![doc = include_str!("../README.md")]
 
 use embassy_executor::Spawner;
 use embassy_lora::iv::{InterruptHandler, Stm32wlInterfaceVariant};
@@ -43,6 +45,14 @@ bind_interrupts!(struct Irqs{
     RNG => rng::InterruptHandler<peripherals::RNG>;
 });
 
+/// Within the Embassy embedded framework, set up a LoRa radio, random number generator, timer functionality, and a non-volatile storage facility
+/// for an stm32wl using Embassy-controlled peripherals.  With that accomplished, an embedded framework/MCU/LoRA board-agnostic LoRaWAN device
+/// composed of these objects is generated to handle state-based operations and a LoRaWAN MAC is created to provide overall control of the LoRaWAN layer.
+/// The MAC remains operable across power-down/power-up cycles, while the device is intended to be dropped on power-down and re-established on power-up
+/// (work in-progress on power-down/power-up functionality).
+///
+/// In this example, the MAC uses the device to accomplish a simple LoRaWAN join/data transmission loop, putting the LoRa board to sleep between
+/// transmissions.
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let mut config = embassy_stm32::Config::default();
@@ -65,6 +75,7 @@ async fn main(_spawner: Spawner) {
         DeviceNonVolatileStore::new(Flash::new_blocking(p.FLASH).into_blocking_regions().bank1_region);
     let mut device = LoraRadio::new_device(radio, rng, timer, non_volatile_store);
 
+    // TODO - set these for your specifc LoRaWAN end-device.
     let dev_eui: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
     let app_eui: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
     let app_key: [u8; 16] =
