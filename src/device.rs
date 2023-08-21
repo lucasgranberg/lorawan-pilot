@@ -1,11 +1,11 @@
 use core::convert::Infallible;
 
-use embassy_stm32::flash::{Bank1Region, Blocking, MAX_ERASE_SIZE};
-use embassy_stm32::pac;
-use embassy_stm32::peripherals::RNG;
-use embassy_stm32::rng::Rng;
+use embassy_nrf::nvmc::Nvmc;
+use embassy_nrf::peripherals::RNG;
+use embassy_nrf::rng::Rng;
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_async::delay::DelayUs;
+use embedded_storage::nor_flash::{NorFlash, ReadNorFlash};
 use futures::Future;
 use lora_phy::mod_traits::RadioKind;
 use lorawan::device::non_volatile_store::NonVolatileStore;
@@ -15,6 +15,8 @@ use postcard::{from_bytes, to_slice};
 use rand_core::RngCore;
 
 use crate::lora_radio::LoraRadio;
+
+const NVMC_PAGE_SIZE: usize = 4096;
 
 extern "C" {
     static __storage: u8;
@@ -163,20 +165,20 @@ impl lorawan::device::timer::Timer for LoraTimer {
 /// power-down/power-up operations for low battery usage when the LoRaWAN end device
 /// only needs to do sporadic transmissions from remote locations.
 pub struct DeviceNonVolatileStore<'a> {
-    flash: Bank1Region<'a, Blocking>,
-    buf: [u8; 256],
+    flash: Nvmc<'a>,
+    buf: [u8; NVMC_PAGE_SIZE],
 }
 impl<'a> DeviceNonVolatileStore<'a> {
-    pub fn new(flash: Bank1Region<'a, Blocking>) -> Self {
-        Self { flash, buf: [0xFF; 256] }
+    pub fn new(flash: Nvmc<'a>) -> Self {
+        Self { flash, buf: [0xFF; NVMC_PAGE_SIZE] }
     }
     pub fn offset() -> u32 {
-        (unsafe { &__storage as *const u8 as u32 }) - pac::FLASH_BASE as u32
+        unsafe { &__storage as *const u8 as u32 }
     }
 }
 #[derive(Debug, PartialEq, defmt::Format)]
 pub enum NonVolatileStoreError {
-    Flash(embassy_stm32::flash::Error),
+    Flash(embassy_nrf::nvmc::Error),
     Encoding,
 }
 impl<'a> NonVolatileStore for DeviceNonVolatileStore<'a> {
@@ -184,14 +186,14 @@ impl<'a> NonVolatileStore for DeviceNonVolatileStore<'a> {
 
     fn save(&mut self, storable: Storable) -> Result<(), Self::Error> {
         self.flash
-            .blocking_erase(Self::offset(), Self::offset() + MAX_ERASE_SIZE as u32)
+            .erase(Self::offset(), Self::offset() + NVMC_PAGE_SIZE as u32)
             .map_err(NonVolatileStoreError::Flash)?;
         to_slice(&storable, self.buf.as_mut_slice()).map_err(|_| NonVolatileStoreError::Encoding)?;
-        self.flash.blocking_write(Self::offset(), &self.buf).map_err(NonVolatileStoreError::Flash)
+        self.flash.write(Self::offset(), &self.buf).map_err(NonVolatileStoreError::Flash)
     }
 
     fn load(&mut self) -> Result<Storable, Self::Error> {
-        self.flash.blocking_read(Self::offset(), self.buf.as_mut_slice()).map_err(NonVolatileStoreError::Flash)?;
+        self.flash.read(Self::offset(), self.buf.as_mut_slice()).map_err(NonVolatileStoreError::Flash)?;
         from_bytes(self.buf.as_mut_slice()).map_err(|_| NonVolatileStoreError::Encoding)
     }
 }

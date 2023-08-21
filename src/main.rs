@@ -9,12 +9,11 @@
 #![doc = include_str!("../README.md")]
 
 use embassy_executor::Spawner;
-use embassy_lora::iv::{InterruptHandler, Stm32wlInterfaceVariant};
-use embassy_stm32::flash::Flash;
-use embassy_stm32::gpio::{Level, Output, Speed};
-use embassy_stm32::rng::Rng;
-use embassy_stm32::spi::Spi;
-use embassy_stm32::{bind_interrupts, pac, peripherals, rng};
+use embassy_lora::iv::GenericSx126xInterfaceVariant;
+use embassy_nrf::gpio::{Input, Level, Output, OutputDrive, Pin as _, Pull};
+use embassy_nrf::nvmc::Nvmc;
+use embassy_nrf::rng::Rng;
+use embassy_nrf::{bind_interrupts, peripherals, rng, spim};
 use embassy_time::{Delay, Duration};
 use lora_phy::mod_params::BoardType;
 use lora_phy::sx1261_2::SX1261_2;
@@ -40,13 +39,13 @@ use panic_reset as _;
 
 use crate::device::LoraTimer;
 
-bind_interrupts!(struct Irqs{
-    SUBGHZ_RADIO => InterruptHandler;
+bind_interrupts!(struct Irqs {
+    SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1 => spim::InterruptHandler<peripherals::TWISPI1>;
     RNG => rng::InterruptHandler<peripherals::RNG>;
 });
 
 /// Within the Embassy embedded framework, set up a LoRa radio, random number generator, timer functionality, and a non-volatile storage facility
-/// for an stm32wl using Embassy-controlled peripherals.  With that accomplished, an embedded framework/MCU/LoRA board-agnostic LoRaWAN device
+/// for an nRF52840/Sx126x combination using Embassy-controlled peripherals.  With that accomplished, an embedded framework/MCU/LoRA board-agnostic LoRaWAN device
 /// composed of these objects is generated to handle state-based operations and a LoRaWAN MAC is created to provide overall control of the LoRaWAN layer.
 /// The MAC remains operable across power-down/power-up cycles, while the device is intended to be dropped on power-down and re-established on power-up
 /// (work in-progress on power-down/power-up functionality).
@@ -55,24 +54,29 @@ bind_interrupts!(struct Irqs{
 /// transmissions.
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let mut config = embassy_stm32::Config::default();
-    config.rcc.mux = embassy_stm32::rcc::ClockSrc::HSE32;
-    config.rcc.enable_lsi = true;
-    let p = embassy_stm32::init(config);
-
-    pac::RCC.ccipr().modify(|w| w.set_rngsel(0b01));
+    let p = embassy_nrf::init(Default::default());
+    let mut spi_config = spim::Config::default();
+    spi_config.frequency = spim::Frequency::M16;
 
     let lora = {
-        let spi = Spi::new_subghz(p.SUBGHZSPI, p.DMA1_CH2, p.DMA1_CH3);
-        let iv = Stm32wlInterfaceVariant::new(Irqs, None, Some(Output::new(p.PC4, Level::Low, Speed::High))).unwrap();
+        let spim = spim::Spim::new(p.TWISPI1, Irqs, p.P1_11, p.P1_13, p.P1_12, spi_config);
 
-        LoRa::new(SX1261_2::new(BoardType::Stm32wlSx1262, spi, iv), true, Delay).await.unwrap()
+        let nss = Output::new(p.P1_10.degrade(), Level::High, OutputDrive::Standard);
+        let reset = Output::new(p.P1_06.degrade(), Level::High, OutputDrive::Standard);
+        let dio1 = Input::new(p.P1_15.degrade(), Pull::Down);
+        let busy = Input::new(p.P1_14.degrade(), Pull::Down);
+        let rf_switch_rx = Output::new(p.P1_05.degrade(), Level::Low, OutputDrive::Standard);
+        let rf_switch_tx = Output::new(p.P1_07.degrade(), Level::Low, OutputDrive::Standard);
+
+        let iv =
+            GenericSx126xInterfaceVariant::new(nss, reset, dio1, busy, Some(rf_switch_rx), Some(rf_switch_tx)).unwrap();
+
+        LoRa::new(SX1261_2::new(BoardType::Rak4631Sx1262, spim, iv), true, Delay).await.unwrap()
     };
     let radio = LoraRadio(lora);
     let rng = DeviceRng(Rng::new(p.RNG, Irqs));
     let timer = LoraTimer::new();
-    let non_volatile_store =
-        DeviceNonVolatileStore::new(Flash::new_blocking(p.FLASH).into_blocking_regions().bank1_region);
+    let non_volatile_store = DeviceNonVolatileStore::new(Nvmc::new(p.NVMC));
     let mut device = LoraRadio::new_device(radio, rng, timer, non_volatile_store);
 
     // TODO - set these for your specifc LoRaWAN end-device.
