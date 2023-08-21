@@ -1,7 +1,5 @@
 # LoRaWAN Demo Application for a TTN gateway under US915 using an nRF52840 with an Sx126x LoRa chip
 
-## Work-In-Progress - not ready for use yet
-
 ### Description
 
 Demonstrates a basic LoRaWAN application for:
