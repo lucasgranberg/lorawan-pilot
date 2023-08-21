@@ -6,41 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lorawan = { version = "0.1.0", features = [
-    "defmt",
-    "serde",
-] }
-embassy-lora = { version = "0.1.0", features = [
-    "stm32wl",
-] }
-embassy-sync = { version = "0.2.0", features = [
-    "defmt",
-] }
-embassy-executor = { version = "0.2.0", features = [
-    "defmt",
-    "integrated-timers",
-    "arch-cortex-m",
-    "executor-thread",
-    "executor-interrupt",
-    "nightly",
-] }
-embassy-time = { version = "0.1.0", features = [
-    "defmt",
-    "defmt-timestamp-uptime",
-    "tick-hz-32_768",
-    "unstable-traits",
-    "nightly",
-] }
-embassy-stm32 = { version = "0.1.0", features = [
-    "nightly",
-    "defmt",
-    "time-driver-any",
-    "memory-x",
-    "unstable-pac",
-    "exti",
-    "unstable-traits",
-    "stm32wl55jc-cm4",
-] }
+lorawan = { version = "0.1.0", features = ["defmt", "serde"] }
+embassy-lora = { version = "0.1.0", features = ["stm32wl"] }
+embassy-sync = { version = "0.2.0", features = ["defmt"] }
+embassy-executor = { version = "0.2.0", features = ["defmt", "integrated-timers", "arch-cortex-m", "executor-thread", "executor-interrupt", "nightly"] }
+embassy-time = { version = "0.1.0", features = ["defmt", "defmt-timestamp-uptime", "tick-hz-32_768", "unstable-traits", "nightly"] }
+embassy-stm32 = { version = "0.1.0", features = ["nightly", "defmt", "time-driver-any", "memory-x", "unstable-pac","exti", "unstable-traits", "stm32wl55jc-cm4"] }
 embassy-embedded-hal = { version = "0.1.0" }
 
 embedded-hal = "0.2.7"
@@ -58,10 +29,8 @@ panic-reset = { version = "0.1.1" }
 futures = { version = "0.3.25", default-features = false, features = [
     "async-await",
 ] }
-heapless = { version = "0.7.16", default-features = false }
 rand_core = { version = "0.6.2", default-features = false }
 lora-phy = { version = "2" }
-serde = { version = "1.0.163", default-features = false, features = ["derive"] }
 postcard = "1.0.4"
 
 [profile.release]
