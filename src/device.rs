@@ -17,6 +17,7 @@ use rand_core::RngCore;
 use crate::lora_radio::LoraRadio;
 
 const NVMC_PAGE_SIZE: usize = 4096;
+const STORABLE_BUFFER_SIZE: usize = 256;
 
 extern "C" {
     static __storage: u8;
@@ -166,11 +167,11 @@ impl lorawan::device::timer::Timer for LoraTimer {
 /// only needs to do sporadic transmissions from remote locations.
 pub struct DeviceNonVolatileStore<'a> {
     flash: Nvmc<'a>,
-    buf: [u8; NVMC_PAGE_SIZE],
+    buf: [u8; STORABLE_BUFFER_SIZE],
 }
 impl<'a> DeviceNonVolatileStore<'a> {
     pub fn new(flash: Nvmc<'a>) -> Self {
-        Self { flash, buf: [0xFF; NVMC_PAGE_SIZE] }
+        Self { flash, buf: [0xFF; STORABLE_BUFFER_SIZE] }
     }
     pub fn offset() -> u32 {
         unsafe { &__storage as *const u8 as u32 }
