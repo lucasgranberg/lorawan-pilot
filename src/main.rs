@@ -10,12 +10,14 @@
 
 use embassy_executor::Spawner;
 use embassy_lora::iv::GenericSx126xInterfaceVariant;
-use embassy_nrf::gpio::{Input, Level, Output, OutputDrive, Pin as _, Pull};
-use embassy_nrf::nvmc::Nvmc;
-use embassy_nrf::rng::Rng;
-use embassy_nrf::{bind_interrupts, peripherals, rng, spim};
+use embassy_rp::clocks::RoscRng;
+use embassy_rp::flash::{Blocking, Flash, Instance, Mode};
+use embassy_rp::gpio::{Input, Level, Output, Pin, Pull};
+use embassy_rp::spi::{Config, Spi};
 use embassy_time::{Delay, Duration};
+use embedded_hal_async::delay::DelayUs;
 use lora_phy::mod_params::BoardType;
+use lora_phy::mod_traits::RadioKind;
 use lora_phy::sx1261_2::SX1261_2;
 use lora_phy::LoRa;
 use lora_radio::LoraRadio;
@@ -39,45 +41,40 @@ use panic_reset as _;
 
 use crate::device::LoraTimer;
 
-bind_interrupts!(struct Irqs {
-    SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1 => spim::InterruptHandler<peripherals::TWISPI1>;
-    RNG => rng::InterruptHandler<peripherals::RNG>;
-});
+pub(crate) const FLASH_SIZE: usize = 2 * 1024 * 1024;
 
 /// Within the Embassy embedded framework, set up a LoRa radio, random number generator, timer functionality, and a non-volatile storage facility
-/// for an nRF52840/Sx126x combination using Embassy-controlled peripherals.  With that accomplished, an embedded framework/MCU/LoRA board-agnostic LoRaWAN device
-/// composed of these objects is generated to handle state-based operations and a LoRaWAN MAC is created to provide overall control of the LoRaWAN layer.
-/// The MAC remains operable across power-down/power-up cycles, while the device is intended to be dropped on power-down and re-established on power-up
-/// (work in-progress on power-down/power-up functionality).
+/// for an RpPico/WaveshareSx1262 combination using Embassy-controlled peripherals.  With that accomplished, an embedded framework/MCU/LoRA board-agnostic
+/// LoRaWAN device composed of these objects is generated to handle state-based operations and a LoRaWAN MAC is created to provide overall control of the
+/// LoRaWAN layer. The MAC remains operable across power-down/power-up cycles, while the device is intended to be dropped on power-down and re-established
+/// on power-up (work in-progress on power-down/power-up functionality).
 ///
 /// In this example, the MAC uses the device to accomplish a simple LoRaWAN join/data transmission loop, putting the LoRa board to sleep between
 /// transmissions.
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let p = embassy_nrf::init(Default::default());
-    let mut spi_config = spim::Config::default();
-    spi_config.frequency = spim::Frequency::M16;
+    let p = embassy_rp::init(Default::default());
 
     let lora = {
-        let spim = spim::Spim::new(p.TWISPI1, Irqs, p.P1_11, p.P1_13, p.P1_12, spi_config);
+        let miso = p.PIN_12;
+        let mosi = p.PIN_11;
+        let clk = p.PIN_10;
+        let spi = Spi::new(p.SPI1, clk, mosi, miso, p.DMA_CH0, p.DMA_CH1, Config::default());
 
-        let nss = Output::new(p.P1_10.degrade(), Level::High, OutputDrive::Standard);
-        let reset = Output::new(p.P1_06.degrade(), Level::High, OutputDrive::Standard);
-        let dio1 = Input::new(p.P1_15.degrade(), Pull::Down);
-        let busy = Input::new(p.P1_14.degrade(), Pull::Down);
-        let rf_switch_rx = Output::new(p.P1_05.degrade(), Level::Low, OutputDrive::Standard);
-        let rf_switch_tx = Output::new(p.P1_07.degrade(), Level::Low, OutputDrive::Standard);
+        let nss = Output::new(p.PIN_3.degrade(), Level::High);
+        let reset = Output::new(p.PIN_15.degrade(), Level::High);
+        let dio1 = Input::new(p.PIN_20.degrade(), Pull::None);
+        let busy = Input::new(p.PIN_2.degrade(), Pull::None);
 
-        let iv =
-            GenericSx126xInterfaceVariant::new(nss, reset, dio1, busy, Some(rf_switch_rx), Some(rf_switch_tx)).unwrap();
+        let iv = GenericSx126xInterfaceVariant::new(nss, reset, dio1, busy, None, None).unwrap();
 
-        LoRa::new(SX1261_2::new(BoardType::Rak4631Sx1262, spim, iv), true, Delay).await.unwrap()
+        LoRa::new(SX1261_2::new(BoardType::RpPicoWaveshareSx1262, spi, iv), true, Delay).await.unwrap()
     };
     let radio = LoraRadio(lora);
-    let rng = DeviceRng(Rng::new(p.RNG, Irqs));
+    let rng = DeviceRng(RoscRng);
     let timer = LoraTimer::new();
-    let non_volatile_store = DeviceNonVolatileStore::new(Nvmc::new(p.NVMC));
-    let mut device = LoraRadio::new_device(radio, rng, timer, non_volatile_store);
+    let non_volatile_store = DeviceNonVolatileStore::new(Flash::<_, Blocking, FLASH_SIZE>::new(p.FLASH));
+    let mut device = new_device(radio, rng, timer, non_volatile_store);
 
     // TODO - set these for your specifc LoRaWAN end-device.
     let dev_eui: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
@@ -85,10 +82,8 @@ async fn main(_spawner: Spawner) {
     let app_key: [u8; 16] =
         [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 
-    let hydrate_res: Result<
-        (Configuration, Credentials),
-        <DeviceNonVolatileStore<'_> as lorawan::device::non_volatile_store::NonVolatileStore>::Error,
-    > = device.hydrate_from_non_volatile(app_eui, dev_eui, app_key);
+    let hydrate_res: Result<(Configuration, Credentials), NonVolatileStoreError> =
+        device.hydrate_from_non_volatile(app_eui, dev_eui, app_key);
     match hydrate_res {
         Ok(_) => defmt::info!("credentials and configuration loaded from non volatile"),
         Err(_) => defmt::info!("credentials and configuration not found in non volatile"),
@@ -132,4 +127,20 @@ async fn main(_spawner: Spawner) {
             embassy_time::Timer::after(Duration::from_secs(60)).await;
         }
     }
+}
+
+/// Creation.
+pub fn new_device<'a, RK, DLY, T, M>(
+    radio: LoraRadio<RK, DLY>,
+    rng: DeviceRng,
+    timer: LoraTimer,
+    non_volatile_store: DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>,
+) -> LoraDevice<'a, RK, DLY, T, M>
+where
+    RK: RadioKind,
+    DLY: DelayUs,
+    T: Instance,
+    M: Mode,
+{
+    LoraDevice::<'a, RK, DLY, T, M>::new(radio, rng, timer, non_volatile_store)
 }

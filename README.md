@@ -27,7 +27,7 @@ The Cargo.toml patch.crates-io specification includes lorawan and embassy reposi
 
 ### Suggested setup
 
-The following can all be run from your local lorawan-pilot folder, with the ttn-us915-nrf52840 branch checked out:
+The following can all be run from your local lorawan-pilot folder, with the ttn-us915-rp branch checked out:
 
 - rustup update (if needed)
 - cargo clean

@@ -1,11 +1,10 @@
 use core::convert::Infallible;
+use core::usize;
 
-use embassy_nrf::nvmc::Nvmc;
-use embassy_nrf::peripherals::RNG;
-use embassy_nrf::rng::Rng;
+use embassy_rp::clocks::RoscRng;
+use embassy_rp::flash::{self, Flash, Instance, Mode};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_async::delay::DelayUs;
-use embedded_storage::nor_flash::{NorFlash, ReadNorFlash};
 use futures::Future;
 use lora_phy::mod_traits::RadioKind;
 use lorawan::device::non_volatile_store::NonVolatileStore;
@@ -15,8 +14,9 @@ use postcard::{from_bytes, to_slice};
 use rand_core::RngCore;
 
 use crate::lora_radio::LoraRadio;
+use crate::FLASH_SIZE;
 
-const NVMC_PAGE_SIZE: usize = 4096;
+const ERASE_SIZE: usize = 4096;
 const STORABLE_BUFFER_SIZE: usize = 256;
 
 extern "C" {
@@ -24,40 +24,46 @@ extern "C" {
 }
 /// Provides the embedded framework/MCU/LoRa board-specific functionality required by the LoRaWAN layer, which remains
 /// agnostic to which embedded framework/MCU/LoRa board is used.
-pub struct LoraDevice<'a, RK, DLY>
+pub struct LoraDevice<'a, RK, DLY, T, M>
 where
     RK: RadioKind,
     DLY: DelayUs,
+    T: Instance,
+    M: Mode,
 {
     radio: LoraRadio<RK, DLY>,
-    rng: DeviceRng<'a>,
+    rng: DeviceRng,
     timer: LoraTimer,
-    non_volatile_store: DeviceNonVolatileStore<'a>,
+    non_volatile_store: DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>,
 }
-impl<'a, RK, DLY> LoraDevice<'a, RK, DLY>
+impl<'a, RK, DLY, T, M> LoraDevice<'a, RK, DLY, T, M>
 where
     RK: RadioKind,
     DLY: DelayUs,
+    T: Instance,
+    M: Mode,
 {
     pub fn new(
         radio: LoraRadio<RK, DLY>,
-        rng: DeviceRng<'a>,
+        rng: DeviceRng,
         timer: LoraTimer,
-        non_volatile_store: DeviceNonVolatileStore<'a>,
-    ) -> LoraDevice<'a, RK, DLY> {
+        non_volatile_store: DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>,
+    ) -> LoraDevice<'a, RK, DLY, T, M> {
         Self { radio, rng, timer, non_volatile_store }
     }
 }
 
-impl<'a, RK, DLY> Device for LoraDevice<'a, RK, DLY>
+impl<'a, RK, DLY, T, M> Device for LoraDevice<'a, RK, DLY, T, M>
 where
     RK: RadioKind,
     DLY: DelayUs,
+    T: Instance,
+    M: Mode,
 {
     type Radio = LoraRadio<RK, DLY>;
-    type Rng = DeviceRng<'a>;
+    type Rng = DeviceRng;
     type Timer = LoraTimer;
-    type NonVolatileStore = DeviceNonVolatileStore<'a>;
+    type NonVolatileStore = DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>;
 
     fn timer(&mut self) -> &mut Self::Timer {
         &mut self.timer
@@ -107,10 +113,12 @@ where
     }
 }
 
-impl<'a, RK, DLY> defmt::Format for LoraDevice<'a, RK, DLY>
+impl<'a, RK, DLY, T, M> defmt::Format for LoraDevice<'a, RK, DLY, T, M>
 where
     RK: RadioKind,
     DLY: DelayUs,
+    T: Instance,
+    M: Mode,
 {
     fn format(&self, fmt: defmt::Formatter<'_>) {
         defmt::write!(fmt, "LoraDevice")
@@ -118,9 +126,9 @@ where
 }
 
 /// Provides the embedded framework/MCU random number generation facility.
-pub struct DeviceRng<'a>(pub(crate) Rng<'a, RNG>);
+pub struct DeviceRng(pub(crate) RoscRng);
 
-impl<'a> lorawan::device::rng::Rng for DeviceRng<'a> {
+impl lorawan::device::rng::Rng for DeviceRng {
     type Error = Infallible;
 
     fn next_u32(&mut self) -> Result<u32, Self::Error> {
@@ -165,30 +173,40 @@ impl lorawan::device::timer::Timer for LoraTimer {
 /// Provides the embedded framework/MCU non-volatile storage facility to enable
 /// power-down/power-up operations for low battery usage when the LoRaWAN end device
 /// only needs to do sporadic transmissions from remote locations.
-pub struct DeviceNonVolatileStore<'a> {
-    flash: Nvmc<'a>,
+pub struct DeviceNonVolatileStore<'a, T, M, const FS: usize>
+where
+    T: Instance,
+    M: Mode,
+{
+    flash: Flash<'a, T, M, FS>,
     buf: [u8; STORABLE_BUFFER_SIZE],
 }
-impl<'a> DeviceNonVolatileStore<'a> {
-    pub fn new(flash: Nvmc<'a>) -> Self {
+impl<'a, T, M> DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>
+where
+    T: Instance,
+    M: Mode,
+{
+    pub fn new(flash: Flash<'a, T, M, FLASH_SIZE>) -> Self {
         Self { flash, buf: [0xFF; STORABLE_BUFFER_SIZE] }
     }
     pub fn offset() -> u32 {
-        unsafe { &__storage as *const u8 as u32 }
+        0x100000 // offset from the flash base, not a memory address
     }
 }
 #[derive(Debug, PartialEq, defmt::Format)]
 pub enum NonVolatileStoreError {
-    Flash(embassy_nrf::nvmc::Error),
+    Flash(flash::Error),
     Encoding,
 }
-impl<'a> NonVolatileStore for DeviceNonVolatileStore<'a> {
+impl<'a, T, M> NonVolatileStore for DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>
+where
+    T: Instance,
+    M: Mode,
+{
     type Error = NonVolatileStoreError;
 
     fn save(&mut self, storable: Storable) -> Result<(), Self::Error> {
-        self.flash
-            .erase(Self::offset(), Self::offset() + NVMC_PAGE_SIZE as u32)
-            .map_err(NonVolatileStoreError::Flash)?;
+        self.flash.erase(Self::offset(), Self::offset() + ERASE_SIZE as u32).map_err(NonVolatileStoreError::Flash)?;
         to_slice(&storable, self.buf.as_mut_slice()).map_err(|_| NonVolatileStoreError::Encoding)?;
         self.flash.write(Self::offset(), &self.buf).map_err(NonVolatileStoreError::Flash)
     }

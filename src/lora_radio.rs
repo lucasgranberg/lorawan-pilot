@@ -5,8 +5,6 @@ use lora_phy::LoRa;
 use lorawan::device::radio::types::{Bandwidth, CodingRate, RxQuality, SpreadingFactor};
 use lorawan::device::radio::Radio;
 
-use crate::device::{DeviceNonVolatileStore, DeviceRng, LoraDevice, LoraTimer};
-
 /// Provides the LoRa radio using the physical layer API in the external lora-phy crate.
 pub struct LoraRadio<RK: RadioKind, DLY: DelayUs>(pub(crate) LoRa<RK, DLY>);
 
@@ -15,15 +13,6 @@ where
     RK: RadioKind,
     DLY: DelayUs,
 {
-    pub fn new_device<'a>(
-        radio: LoraRadio<RK, DLY>,
-        rng: DeviceRng<'a>,
-        timer: LoraTimer,
-        non_volatile_store: DeviceNonVolatileStore<'a>,
-    ) -> LoraDevice<'a, RK, DLY> {
-        LoraDevice::<'a, RK, DLY>::new(radio, rng, timer, non_volatile_store)
-    }
-
     fn sf(from: SpreadingFactor) -> lora_phy::mod_params::SpreadingFactor {
         match from {
             SpreadingFactor::_7 => lora_phy::mod_params::SpreadingFactor::_7,
