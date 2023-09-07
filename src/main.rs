@@ -8,12 +8,15 @@
 #![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 
+use defmt::unwrap;
 use embassy_executor::Spawner;
 use embassy_lora::iv::GenericSx126xInterfaceVariant;
 use embassy_rp::clocks::RoscRng;
 use embassy_rp::flash::{Blocking, Flash, Instance, Mode};
 use embassy_rp::gpio::{Input, Level, Output, Pin, Pull};
 use embassy_rp::spi::{Config, Spi};
+use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::{Delay, Duration};
 use embedded_hal_async::delay::DelayUs;
 use lora_phy::mod_params::BoardType;
@@ -21,6 +24,7 @@ use lora_phy::mod_traits::RadioKind;
 use lora_phy::sx1261_2::SX1261_2;
 use lora_phy::LoRa;
 use lora_radio::LoraRadio;
+use lorawan::device::packet_buffer::PacketBuffer;
 use lorawan::device::radio::types::RxQuality;
 use lorawan::device::Device;
 
@@ -29,6 +33,7 @@ mod lora_radio;
 
 use defmt_rtt as _;
 use device::*;
+use lorawan::device::packet_queue::PACKET_SIZE;
 use lorawan::mac::region::channel_plan::fixed::FixedChannelPlan;
 use lorawan::mac::region::us915::US915;
 use lorawan::mac::types::{Configuration, Credentials};
@@ -42,6 +47,12 @@ use panic_reset as _;
 use crate::device::LoraTimer;
 
 pub(crate) const FLASH_SIZE: usize = 2 * 1024 * 1024;
+
+/// Create the uplink packet bus. It has a queue of 4, supports 1 subscriber and 2 publishers.
+static PACKET_BUS_UPLINK: PubSubChannel<ThreadModeRawMutex, PacketBuffer<PACKET_SIZE>, 4, 1, 2> = PubSubChannel::new();
+/// Create the downlink packet bus. It has a queue of 4, supports 1 subscriber and 1 publisher
+static PACKET_BUS_DOWNLINK: PubSubChannel<ThreadModeRawMutex, PacketBuffer<PACKET_SIZE>, 4, 1, 1> =
+    PubSubChannel::new();
 
 /// Within the Embassy embedded framework, set up a LoRa radio, random number generator, timer functionality, and a non-volatile storage facility
 /// for an RpPico/WaveshareSx1262 combination using Embassy-controlled peripherals.  With that accomplished, an embedded framework/MCU/LoRA board-agnostic
@@ -74,7 +85,15 @@ async fn main(_spawner: Spawner) {
     let rng = DeviceRng(RoscRng);
     let timer = LoraTimer::new();
     let non_volatile_store = DeviceNonVolatileStore::new(Flash::<_, Blocking, FLASH_SIZE>::new(p.FLASH));
-    let mut device = new_device(radio, rng, timer, non_volatile_store);
+    let uplink_subscriber = unwrap!(PACKET_BUS_UPLINK.dyn_subscriber());
+    let uplink_publisher = unwrap!(PACKET_BUS_UPLINK.dyn_publisher());
+    let loopback_publisher = unwrap!(PACKET_BUS_UPLINK.dyn_publisher());
+    let downlink_subscriber = unwrap!(PACKET_BUS_DOWNLINK.dyn_subscriber());
+    let downlink_publisher = unwrap!(PACKET_BUS_UPLINK.dyn_publisher());
+    let uplink_packet_queue = DevicePacketQueue::new(loopback_publisher, Some(uplink_subscriber));
+    let downlink_packet_queue = DevicePacketQueue::new(downlink_publisher, None);
+
+    let mut device = new_device(radio, rng, timer, non_volatile_store, uplink_packet_queue, downlink_packet_queue);
 
     // TODO - set these for your specifc LoRaWAN end-device.
     let dev_eui: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
@@ -135,6 +154,8 @@ pub fn new_device<'a, RK, DLY, T, M>(
     rng: DeviceRng,
     timer: LoraTimer,
     non_volatile_store: DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>,
+    uplink_packet_queue: DevicePacketQueue,
+    downlink_packet_queue: DevicePacketQueue,
 ) -> LoraDevice<'a, RK, DLY, T, M>
 where
     RK: RadioKind,
@@ -142,5 +163,12 @@ where
     T: Instance,
     M: Mode,
 {
-    LoraDevice::<'a, RK, DLY, T, M>::new(radio, rng, timer, non_volatile_store)
+    LoraDevice::<'a, RK, DLY, T, M>::new(
+        radio,
+        rng,
+        timer,
+        non_volatile_store,
+        uplink_packet_queue,
+        downlink_packet_queue,
+    )
 }

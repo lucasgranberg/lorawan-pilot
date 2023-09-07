@@ -3,11 +3,14 @@ use core::usize;
 
 use embassy_rp::clocks::RoscRng;
 use embassy_rp::flash::{self, Flash, Instance, Mode};
+use embassy_sync::pubsub::{DynPublisher, DynSubscriber, WaitResult};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_async::delay::DelayUs;
 use futures::Future;
 use lora_phy::mod_traits::RadioKind;
 use lorawan::device::non_volatile_store::NonVolatileStore;
+use lorawan::device::packet_buffer::PacketBuffer;
+use lorawan::device::packet_queue::PACKET_SIZE;
 use lorawan::device::Device;
 use lorawan::mac::types::Storable;
 use postcard::{from_bytes, to_slice};
@@ -35,6 +38,8 @@ where
     rng: DeviceRng,
     timer: LoraTimer,
     non_volatile_store: DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>,
+    uplink_packet_queue: DevicePacketQueue,
+    downlink_packet_queue: DevicePacketQueue,
 }
 impl<'a, RK, DLY, T, M> LoraDevice<'a, RK, DLY, T, M>
 where
@@ -48,8 +53,10 @@ where
         rng: DeviceRng,
         timer: LoraTimer,
         non_volatile_store: DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>,
+        uplink_packet_queue: DevicePacketQueue,
+        downlink_packet_queue: DevicePacketQueue,
     ) -> LoraDevice<'a, RK, DLY, T, M> {
-        Self { radio, rng, timer, non_volatile_store }
+        Self { radio, rng, timer, non_volatile_store, uplink_packet_queue, downlink_packet_queue }
     }
 }
 
@@ -64,6 +71,7 @@ where
     type Rng = DeviceRng;
     type Timer = LoraTimer;
     type NonVolatileStore = DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>;
+    type PacketQueue = DevicePacketQueue;
 
     fn timer(&mut self) -> &mut Self::Timer {
         &mut self.timer
@@ -79,6 +87,14 @@ where
 
     fn non_volatile_store(&mut self) -> &mut Self::NonVolatileStore {
         &mut self.non_volatile_store
+    }
+
+    fn uplink_packet_queue(&mut self) -> &mut Self::PacketQueue {
+        &mut self.uplink_packet_queue
+    }
+
+    fn downlink_packet_queue(&mut self) -> &mut Self::PacketQueue {
+        &mut self.downlink_packet_queue
     }
 
     fn max_eirp() -> u8 {
@@ -214,5 +230,55 @@ where
     fn load(&mut self) -> Result<Storable, Self::Error> {
         self.flash.read(Self::offset(), self.buf.as_mut_slice()).map_err(NonVolatileStoreError::Flash)?;
         from_bytes(self.buf.as_mut_slice()).map_err(|_| NonVolatileStoreError::Encoding)
+    }
+}
+
+/// Provides the embedded framework/MCU packet queueing capability for uplink and downlink packets.
+pub struct DevicePacketQueue {
+    publisher: DynPublisher<'static, PacketBuffer<PACKET_SIZE>>,
+    subscriber: Option<DynSubscriber<'static, PacketBuffer<PACKET_SIZE>>>,
+}
+impl DevicePacketQueue {
+    pub fn new(
+        publisher: DynPublisher<'static, PacketBuffer<PACKET_SIZE>>,
+        subscriber: Option<DynSubscriber<'static, PacketBuffer<PACKET_SIZE>>>,
+    ) -> Self {
+        Self { publisher, subscriber }
+    }
+}
+
+#[derive(Debug, PartialEq, defmt::Format)]
+pub enum PacketQueueError {
+    QueueReadInvalid,
+    MissedPackets,
+}
+
+impl lorawan::device::packet_queue::PacketQueue for DevicePacketQueue {
+    type Error = PacketQueueError;
+
+    async fn push(&mut self, packet: PacketBuffer<PACKET_SIZE>) -> Result<(), Self::Error> {
+        self.publisher.publish(packet).await;
+        Ok(())
+    }
+
+    async fn next(&mut self) -> Result<PacketBuffer<PACKET_SIZE>, Self::Error> {
+        if let Some(sub) = &mut self.subscriber {
+            let wait_result = sub.next_message().await;
+            if let WaitResult::Message(packet) = wait_result {
+                Ok(packet)
+            } else {
+                Err(PacketQueueError::MissedPackets)
+            }
+        } else {
+            Err(PacketQueueError::QueueReadInvalid)
+        }
+    }
+
+    fn available(&mut self) -> bool {
+        if let Some(sub) = &mut self.subscriber {
+            sub.available() > 0
+        } else {
+            false
+        }
     }
 }
