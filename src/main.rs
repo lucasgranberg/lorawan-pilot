@@ -15,10 +15,12 @@ use embassy_rp::clocks::RoscRng;
 use embassy_rp::flash::{Blocking, Flash, Instance, Mode};
 use embassy_rp::gpio::{Input, Level, Output, Pin, Pull};
 use embassy_rp::spi::{Config, Spi};
+use embassy_rp::Peripherals;
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::{Delay, Duration};
 use embedded_hal_async::delay::DelayUs;
+use futures::pin_mut;
 use lora_phy::mod_params::BoardType;
 use lora_phy::mod_traits::RadioKind;
 use lora_phy::sx1261_2::SX1261_2;
@@ -33,7 +35,7 @@ mod lora_radio;
 
 use defmt_rtt as _;
 use device::*;
-use lorawan::device::packet_queue::PACKET_SIZE;
+use lorawan::device::packet_queue::{PacketQueue, PACKET_SIZE};
 use lorawan::mac::region::channel_plan::fixed::FixedChannelPlan;
 use lorawan::mac::region::us915::US915;
 use lorawan::mac::types::{Configuration, Credentials};
@@ -54,18 +56,17 @@ static PACKET_BUS_UPLINK: PubSubChannel<ThreadModeRawMutex, PacketBuffer<PACKET_
 static PACKET_BUS_DOWNLINK: PubSubChannel<ThreadModeRawMutex, PacketBuffer<PACKET_SIZE>, 4, 1, 1> =
     PubSubChannel::new();
 
-/// Within the Embassy embedded framework, set up a LoRa radio, random number generator, timer functionality, and a non-volatile storage facility
-/// for an RpPico/WaveshareSx1262 combination using Embassy-controlled peripherals.  With that accomplished, an embedded framework/MCU/LoRA board-agnostic
-/// LoRaWAN device composed of these objects is generated to handle state-based operations and a LoRaWAN MAC is created to provide overall control of the
-/// LoRaWAN layer. The MAC remains operable across power-down/power-up cycles, while the device is intended to be dropped on power-down and re-established
-/// on power-up (work in-progress on power-down/power-up functionality).
+/// As a separate Embassy task, set up a LoRa radio, random number generator, timer functionality, a non-volatile storage facility, and decoupling
+/// uplink/dowlink packet queues for an RpPico/WaveshareSx1262 combination using Embassy-controlled peripherals.  With that accomplished, an
+/// embedded framework/MCU/LoRA board-agnostic LoRaWAN device composed of these objects is generated to handle state-based operations and a
+/// LoRaWAN MAC is created to provide overall control of the LoRaWAN layer. The MAC remains operable across power-down/power-up cycles, while the
+/// device is intended to be dropped on power-down and re-established on power-up (work in-progress on power-down/power-up functionality).
 ///
-/// In this example, the MAC uses the device to accomplish a simple LoRaWAN join/data transmission loop, putting the LoRa board to sleep between
-/// transmissions.
-#[embassy_executor::main]
-async fn main(_spawner: Spawner) {
-    let p = embassy_rp::init(Default::default());
-
+/// The join operation to the LoRaWAN network is performed internally in this task.  The end device application (the main task in this case) is only
+/// responsible for sending data packets through the uplink queue and receiving data packets through the downlink queue.  In this example, the "queues"
+/// are implemented using the Embassy pubsub functionality.
+#[embassy_executor::task]
+async fn lorawan(p: Peripherals) {
     let lora = {
         let miso = p.PIN_12;
         let mosi = p.PIN_11;
@@ -86,10 +87,8 @@ async fn main(_spawner: Spawner) {
     let timer = LoraTimer::new();
     let non_volatile_store = DeviceNonVolatileStore::new(Flash::<_, Blocking, FLASH_SIZE>::new(p.FLASH));
     let uplink_subscriber = unwrap!(PACKET_BUS_UPLINK.dyn_subscriber());
-    let uplink_publisher = unwrap!(PACKET_BUS_UPLINK.dyn_publisher());
     let loopback_publisher = unwrap!(PACKET_BUS_UPLINK.dyn_publisher());
-    let downlink_subscriber = unwrap!(PACKET_BUS_DOWNLINK.dyn_subscriber());
-    let downlink_publisher = unwrap!(PACKET_BUS_UPLINK.dyn_publisher());
+    let downlink_publisher = unwrap!(PACKET_BUS_DOWNLINK.dyn_publisher());
     let uplink_packet_queue = DevicePacketQueue::new(loopback_publisher, Some(uplink_subscriber));
     let downlink_packet_queue = DevicePacketQueue::new(downlink_publisher, None);
 
@@ -111,6 +110,10 @@ async fn main(_spawner: Spawner) {
         hydrate_res.unwrap_or((Default::default(), Credentials::new(app_eui, dev_eui, app_key)));
     let mut mac: Mac<US915, FixedChannelPlan<US915>> = Mac::new(configuration, credentials);
 
+    // Following is a small part of what will become the scheduler for Class A, B, and C within the LoRaWAN implementation itself,
+    // using the mac and device created here.  This code snippet is only here temporarily to check the feasibility of queuing to decouple
+    // execution flows, some of which have rigid timing requirements and some of which do not.
+
     let mut radio_buffer = Default::default();
     loop {
         while !mac.is_joined() {
@@ -119,32 +122,68 @@ async fn main(_spawner: Spawner) {
                 Ok(res) => defmt::info!("Network joined! {:?}", res),
                 Err(e) => {
                     defmt::error!("Join failed {:?}", e);
-                    embassy_time::Timer::after(Duration::from_secs(600)).await;
+                    embassy_time::Timer::after(Duration::from_secs(60)).await;
                 }
             };
         }
-        'sending: while mac.is_joined() {
-            defmt::info!("SENDING");
-            let send_res: Result<Option<(usize, RxQuality)>, _> =
-                mac.send(&mut device, &mut radio_buffer, b"PING", 1, false, None).await;
-            match send_res {
-                Ok(res) => defmt::info!("{:?}", res),
-                Err(e) => {
-                    defmt::error!("{:?}", e);
-                    if let lorawan::Error::Mac(lorawan::mac::Error::SessionExpired) = e {
-                        defmt::info!("Session expired");
-                        break 'sending;
-                    };
+
+        let uplink_data_fut = embassy_time::Timer::after(Duration::from_secs(1));
+        pin_mut!(uplink_data_fut);
+        uplink_data_fut.await;
+        let has_uplink_packet = match device.uplink_packet_queue().available() {
+            Ok(true) => true,
+            Ok(false) => false,
+            Err(e) => {
+                defmt::error!("Uplink packet queue read error {:?}", e);
+                false
+            }
+        };
+
+        if has_uplink_packet {
+            match device.uplink_packet_queue().next().await {
+                Ok(packet_buffer) => {
+                    defmt::info!("SENDING");
+                    radio_buffer = Default::default();
+                    let send_res: Result<Option<(usize, RxQuality)>, _> =
+                        mac.send(&mut device, &mut radio_buffer, packet_buffer.as_ref(), 1, false, None).await;
+                    match send_res {
+                        Ok(res) => defmt::info!("{:?}", res),
+                        Err(e) => {
+                            defmt::error!("{:?}", e);
+                            if let lorawan::Error::Mac(lorawan::mac::Error::SessionExpired) = e {
+                                defmt::info!("Session expired");
+                            };
+                        }
+                    }
                 }
+                Err(e) => defmt::error!("Uplink packet queue read error {:?}", e),
             }
-
-            match device.radio().0.sleep(false).await {
-                Ok(()) => {}
-                Err(e) => defmt::error!("Radio sleep failed with error {:?}", e),
-            }
-
-            embassy_time::Timer::after(Duration::from_secs(60)).await;
         }
+
+        match device.radio().0.sleep(false).await {
+            Ok(()) => {}
+            Err(e) => defmt::error!("Radio sleep failed with error {:?}", e),
+        }
+
+        embassy_time::Timer::after(Duration::from_secs(60)).await;
+    }
+}
+
+/// Within the Embassy embedded framework, set up a separate LoRaWAN task, then feed it data packets.
+#[embassy_executor::main]
+async fn main(spawner: Spawner) {
+    let p = embassy_rp::init(Default::default());
+    let uplink_publisher = unwrap!(PACKET_BUS_UPLINK.dyn_publisher());
+    let _downlink_subscriber = unwrap!(PACKET_BUS_DOWNLINK.dyn_subscriber());
+
+    spawner.must_spawn(lorawan(p));
+
+    loop {
+        embassy_time::Timer::after(Duration::from_secs(50)).await;
+
+        let mut uplink_packet = PacketBuffer::<PACKET_SIZE>::new();
+        let _result = uplink_packet.extend_from_slice(b"PING");
+        uplink_publisher.publish(uplink_packet).await;
     }
 }
 

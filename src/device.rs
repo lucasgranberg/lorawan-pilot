@@ -274,11 +274,11 @@ impl lorawan::device::packet_queue::PacketQueue for DevicePacketQueue {
         }
     }
 
-    fn available(&mut self) -> bool {
+    fn available(&mut self) -> Result<bool, Self::Error> {
         if let Some(sub) = &mut self.subscriber {
-            sub.available() > 0
+            Ok(sub.available() > 0)
         } else {
-            false
+            Err(PacketQueueError::QueueReadInvalid)
         }
     }
 }
