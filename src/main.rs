@@ -20,14 +20,12 @@ use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::{Delay, Duration};
 use embedded_hal_async::delay::DelayUs;
-use futures::pin_mut;
 use lora_phy::mod_params::BoardType;
 use lora_phy::mod_traits::RadioKind;
 use lora_phy::sx1261_2::SX1261_2;
 use lora_phy::LoRa;
 use lora_radio::LoraRadio;
 use lorawan::device::packet_buffer::PacketBuffer;
-use lorawan::device::radio::types::RxQuality;
 use lorawan::device::Device;
 
 mod device;
@@ -35,10 +33,10 @@ mod lora_radio;
 
 use defmt_rtt as _;
 use device::*;
-use lorawan::device::packet_queue::{PacketQueue, PACKET_SIZE};
+use lorawan::device::packet_queue::PACKET_SIZE;
 use lorawan::mac::region::channel_plan::fixed::FixedChannelPlan;
 use lorawan::mac::region::us915::US915;
-use lorawan::mac::types::{Configuration, Credentials};
+use lorawan::mac::types::{ClassMode, Configuration, Credentials};
 use lorawan::mac::Mac;
 #[cfg(debug_assertions)]
 use panic_probe as _;
@@ -62,9 +60,10 @@ static PACKET_BUS_DOWNLINK: PubSubChannel<ThreadModeRawMutex, PacketBuffer<PACKE
 /// LoRaWAN MAC is created to provide overall control of the LoRaWAN layer. The MAC remains operable across power-down/power-up cycles, while the
 /// device is intended to be dropped on power-down and re-established on power-up (work in-progress on power-down/power-up functionality).
 ///
-/// The join operation to the LoRaWAN network is performed internally in this task.  The end device application (the main task in this case) is only
-/// responsible for sending data packets through the uplink queue and receiving data packets through the downlink queue.  In this example, the "queues"
-/// are implemented using the Embassy pubsub functionality.
+/// With set up complete, the LoRaWAN MAC scheduler is run to handle processing associated with the LoRaWAN class modes (A, AB, or AC).
+///
+/// The end device application (the main task in this case) is only responsible for sending data packets through the uplink queue and receiving data packets
+/// through the downlink queue.  In this example, the "queues" are implemented using the Embassy pubsub functionality.
 #[embassy_executor::task]
 async fn lorawan(p: Peripherals) {
     let lora = {
@@ -99,6 +98,7 @@ async fn lorawan(p: Peripherals) {
     let app_eui: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
     let app_key: [u8; 16] =
         [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    let class_mode = ClassMode::A;
 
     let hydrate_res: Result<(Configuration, Credentials), NonVolatileStoreError> =
         device.hydrate_from_non_volatile(app_eui, dev_eui, app_key);
@@ -106,66 +106,14 @@ async fn lorawan(p: Peripherals) {
         Ok(_) => defmt::info!("credentials and configuration loaded from non volatile"),
         Err(_) => defmt::info!("credentials and configuration not found in non volatile"),
     };
-    let (configuration, credentials) =
+    let (mut configuration, credentials) =
         hydrate_res.unwrap_or((Default::default(), Credentials::new(app_eui, dev_eui, app_key)));
+    configuration.class_mode = class_mode;
     let mut mac: Mac<US915, FixedChannelPlan<US915>> = Mac::new(configuration, credentials);
 
-    // Following is a small part of what will become the scheduler for Class A, B, and C within the LoRaWAN implementation itself,
-    // using the mac and device created here.  This code snippet is only here temporarily to check the feasibility of queuing to decouple
-    // execution flows, some of which have rigid timing requirements and some of which do not.
-
-    let mut radio_buffer = Default::default();
     loop {
-        while !mac.is_joined() {
-            defmt::info!("JOINING");
-            match mac.join(&mut device, &mut radio_buffer).await {
-                Ok(res) => defmt::info!("Network joined! {:?}", res),
-                Err(e) => {
-                    defmt::error!("Join failed {:?}", e);
-                    embassy_time::Timer::after(Duration::from_secs(60)).await;
-                }
-            };
-        }
-
-        let uplink_data_fut = embassy_time::Timer::after(Duration::from_secs(1));
-        pin_mut!(uplink_data_fut);
-        uplink_data_fut.await;
-        let has_uplink_packet = match device.uplink_packet_queue().available() {
-            Ok(true) => true,
-            Ok(false) => false,
-            Err(e) => {
-                defmt::error!("Uplink packet queue read error {:?}", e);
-                false
-            }
-        };
-
-        if has_uplink_packet {
-            match device.uplink_packet_queue().next().await {
-                Ok(packet_buffer) => {
-                    defmt::info!("SENDING");
-                    radio_buffer = Default::default();
-                    let send_res: Result<Option<(usize, RxQuality)>, _> =
-                        mac.send(&mut device, &mut radio_buffer, packet_buffer.as_ref(), 1, false, None).await;
-                    match send_res {
-                        Ok(res) => defmt::info!("{:?}", res),
-                        Err(e) => {
-                            defmt::error!("{:?}", e);
-                            if let lorawan::Error::Mac(lorawan::mac::Error::SessionExpired) = e {
-                                defmt::info!("Session expired");
-                            };
-                        }
-                    }
-                }
-                Err(e) => defmt::error!("Uplink packet queue read error {:?}", e),
-            }
-        }
-
-        match device.radio().0.sleep(false).await {
-            Ok(()) => {}
-            Err(e) => defmt::error!("Radio sleep failed with error {:?}", e),
-        }
-
-        embassy_time::Timer::after(Duration::from_secs(60)).await;
+        mac.run_scheduler(&mut device).await;
+        defmt::error!("The LoRaWAN scheduler exited.");
     }
 }
 
