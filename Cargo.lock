@@ -673,7 +673,7 @@ dependencies = [
 [[package]]
 name = "lorawan"
 version = "0.1.0"
-source = "git+https://github.com/lucasgranberg/lorawan.git#713d7f5a6cece00785148dd2440b5dc31aac8e52"
+source = "git+https://github.com/lucasgranberg/lorawan.git?rev=6f8f027517c595facdc002a451dc05e17eec4dca#6f8f027517c595facdc002a451dc05e17eec4dca"
 dependencies = [
  "aes",
  "as-slice",
@@ -682,7 +682,6 @@ dependencies = [
  "futures",
  "generic-array",
  "heapless",
- "lora-phy",
  "serde",
 ]
 
