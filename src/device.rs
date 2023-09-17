@@ -97,6 +97,10 @@ where
         &mut self.downlink_packet_queue
     }
 
+    fn future_generators(&mut self) -> (&mut Self::Timer, &mut Self::Radio, &mut Self::PacketQueue) {
+        (&mut self.timer, &mut self.radio, &mut self.uplink_packet_queue)
+    }
+
     fn max_eirp() -> u8 {
         22
     }
