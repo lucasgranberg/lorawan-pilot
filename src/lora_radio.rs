@@ -69,7 +69,7 @@ where
     async fn rx(
         &mut self,
         config: lorawan::device::radio::types::RfConfig,
-        window_in_secs: u8,
+        window_in_secs: Option<u8>,
         rx_buf: &mut [u8],
     ) -> Result<
         (usize, lorawan::device::radio::types::RxQuality),
@@ -81,7 +81,7 @@ where
         let cr = Self::cr(config.coding_rate);
         let mdltn_params = lora.create_modulation_params(sf, bw, cr, config.frequency)?;
         let rx_pkt_params = lora.create_rx_packet_params(8, false, rx_buf.len() as u8, true, true, &mdltn_params)?;
-        lora.prepare_for_rx(&mdltn_params, &rx_pkt_params, Some(window_in_secs), None, true).await?;
+        lora.prepare_for_rx(&mdltn_params, &rx_pkt_params, window_in_secs, None, true).await?;
         match lora.rx(&rx_pkt_params, rx_buf).await {
             Ok((received_len, rx_pkt_status)) => {
                 Ok((
