@@ -60,7 +60,7 @@ static PACKET_BUS_DOWNLINK: PubSubChannel<ThreadModeRawMutex, PacketBuffer<PACKE
 /// LoRaWAN MAC is created to provide overall control of the LoRaWAN layer. The MAC remains operable across power-down/power-up cycles, while the
 /// device is intended to be dropped on power-down and re-established on power-up (work in-progress on power-down/power-up functionality).
 ///
-/// With set up complete, the LoRaWAN MAC scheduler is run to handle processing associated with the LoRaWAN class modes (A, AB, or AC).
+/// With set up complete, the LoRaWAN MAC scheduler is run to handle processing associated with the LoRaWAN class modes (Join, A, AB, or AC).
 ///
 /// The end device application (the main task in this case) is only responsible for sending data packets through the uplink queue and receiving data packets
 /// through the downlink queue.  In this example, the "queues" are implemented using the Embassy pubsub functionality.
@@ -84,7 +84,7 @@ async fn lorawan(p: Peripherals) {
     let radio = LoraRadio(lora);
     let rng = DeviceRng(RoscRng);
     let timer = LoraTimer::new();
-    let non_volatile_store = DeviceNonVolatileStore::new(Flash::<_, Blocking, FLASH_SIZE>::new(p.FLASH));
+    let non_volatile_store = DeviceNonVolatileStore::new(Flash::<_, Blocking, FLASH_SIZE>::new_blocking(p.FLASH));
     let uplink_subscriber = unwrap!(PACKET_BUS_UPLINK.dyn_subscriber());
     let loopback_publisher = unwrap!(PACKET_BUS_UPLINK.dyn_publisher());
     let downlink_publisher = unwrap!(PACKET_BUS_DOWNLINK.dyn_publisher());
@@ -98,7 +98,7 @@ async fn lorawan(p: Peripherals) {
     let app_eui: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
     let app_key: [u8; 16] =
         [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-    let class_mode = ClassMode::A;
+    let class_mode = ClassMode::AC;
 
     let hydrate_res: Result<(Configuration, Credentials), NonVolatileStoreError> =
         device.hydrate_from_non_volatile(app_eui, dev_eui, app_key);

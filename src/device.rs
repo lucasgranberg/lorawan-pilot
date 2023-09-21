@@ -226,13 +226,15 @@ where
     type Error = NonVolatileStoreError;
 
     fn save(&mut self, storable: Storable) -> Result<(), Self::Error> {
-        self.flash.erase(Self::offset(), Self::offset() + ERASE_SIZE as u32).map_err(NonVolatileStoreError::Flash)?;
+        self.flash
+            .blocking_erase(Self::offset(), Self::offset() + ERASE_SIZE as u32)
+            .map_err(NonVolatileStoreError::Flash)?;
         to_slice(&storable, self.buf.as_mut_slice()).map_err(|_| NonVolatileStoreError::Encoding)?;
-        self.flash.write(Self::offset(), &self.buf).map_err(NonVolatileStoreError::Flash)
+        self.flash.blocking_write(Self::offset(), &self.buf).map_err(NonVolatileStoreError::Flash)
     }
 
     fn load(&mut self) -> Result<Storable, Self::Error> {
-        self.flash.read(Self::offset(), self.buf.as_mut_slice()).map_err(NonVolatileStoreError::Flash)?;
+        self.flash.blocking_read(Self::offset(), self.buf.as_mut_slice()).map_err(NonVolatileStoreError::Flash)?;
         from_bytes(self.buf.as_mut_slice()).map_err(|_| NonVolatileStoreError::Encoding)
     }
 }
