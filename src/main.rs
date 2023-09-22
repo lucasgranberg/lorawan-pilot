@@ -34,8 +34,8 @@ mod lora_radio;
 use defmt_rtt as _;
 use device::*;
 use lorawan::device::packet_queue::PACKET_SIZE;
-use lorawan::mac::region::channel_plan::fixed::FixedChannelPlan;
-use lorawan::mac::region::us915::US915;
+use lorawan::mac::region::channel_plan::dynamic::DynamicChannelPlan;
+use lorawan::mac::region::eu868::EU868;
 use lorawan::mac::types::{ClassMode, Configuration, Credentials};
 use lorawan::mac::Mac;
 #[cfg(debug_assertions)]
@@ -104,7 +104,7 @@ async fn lorawan(p: Peripherals) {
     let (mut configuration, credentials) =
         hydrate_res.unwrap_or((Default::default(), Credentials::new(app_eui, dev_eui, app_key)));
     configuration.class_mode = class_mode;
-    let mut mac: Mac<US915, FixedChannelPlan<US915>> = Mac::new(configuration, credentials);
+    let mut mac: Mac<EU868, DynamicChannelPlan<EU868>> = Mac::new(configuration, credentials);
 
     loop {
         mac.run_scheduler(&mut device).await;
