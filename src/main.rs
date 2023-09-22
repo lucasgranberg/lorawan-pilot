@@ -10,12 +10,12 @@
 
 use defmt::unwrap;
 use embassy_executor::Spawner;
-use embassy_lora::iv::GenericSx126xInterfaceVariant;
-use embassy_rp::clocks::RoscRng;
-use embassy_rp::flash::{Blocking, Flash, Instance, Mode};
-use embassy_rp::gpio::{Input, Level, Output, Pin, Pull};
-use embassy_rp::spi::{Config, Spi};
-use embassy_rp::Peripherals;
+use embassy_lora::iv::{InterruptHandler, Stm32wlInterfaceVariant};
+use embassy_stm32::flash::Flash;
+use embassy_stm32::gpio::{Level, Output, Speed};
+use embassy_stm32::rng::Rng;
+use embassy_stm32::spi::Spi;
+use embassy_stm32::{bind_interrupts, pac, peripherals, rng, Peripherals};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::pubsub::PubSubChannel;
 use embassy_time::{Delay, Duration};
@@ -46,7 +46,10 @@ use panic_reset as _;
 
 use crate::device::LoraTimer;
 
-pub(crate) const FLASH_SIZE: usize = 2 * 1024 * 1024;
+bind_interrupts!(struct Irqs{
+    SUBGHZ_RADIO => InterruptHandler;
+    RNG => rng::InterruptHandler<peripherals::RNG>;
+});
 
 /// Create the uplink packet bus. It has a queue of 4, supports 1 subscriber and 2 publishers.
 static PACKET_BUS_UPLINK: PubSubChannel<ThreadModeRawMutex, PacketBuffer<PACKET_SIZE>, 4, 1, 2> = PubSubChannel::new();
@@ -55,7 +58,7 @@ static PACKET_BUS_DOWNLINK: PubSubChannel<ThreadModeRawMutex, PacketBuffer<PACKE
     PubSubChannel::new();
 
 /// As a separate Embassy task, set up a LoRa radio, random number generator, timer functionality, a non-volatile storage facility, and decoupling
-/// uplink/dowlink packet queues for an RpPico/WaveshareSx1262 combination using Embassy-controlled peripherals.  With that accomplished, an
+/// uplink/dowlink packet queues for an stm32wl using Embassy-controlled peripherals.  With that accomplished, an
 /// embedded framework/MCU/LoRA board-agnostic LoRaWAN device composed of these objects is generated to handle state-based operations and a
 /// LoRaWAN MAC is created to provide overall control of the LoRaWAN layer. The MAC remains operable across power-down/power-up cycles, while the
 /// device is intended to be dropped on power-down and re-established on power-up (work in-progress on power-down/power-up functionality).
@@ -67,24 +70,16 @@ static PACKET_BUS_DOWNLINK: PubSubChannel<ThreadModeRawMutex, PacketBuffer<PACKE
 #[embassy_executor::task]
 async fn lorawan(p: Peripherals) {
     let lora = {
-        let miso = p.PIN_12;
-        let mosi = p.PIN_11;
-        let clk = p.PIN_10;
-        let spi = Spi::new(p.SPI1, clk, mosi, miso, p.DMA_CH0, p.DMA_CH1, Config::default());
+        let spi = Spi::new_subghz(p.SUBGHZSPI, p.DMA1_CH2, p.DMA1_CH3);
+        let iv = Stm32wlInterfaceVariant::new(Irqs, None, Some(Output::new(p.PC4, Level::Low, Speed::High))).unwrap();
 
-        let nss = Output::new(p.PIN_3.degrade(), Level::High);
-        let reset = Output::new(p.PIN_15.degrade(), Level::High);
-        let dio1 = Input::new(p.PIN_20.degrade(), Pull::None);
-        let busy = Input::new(p.PIN_2.degrade(), Pull::None);
-
-        let iv = GenericSx126xInterfaceVariant::new(nss, reset, dio1, busy, None, None).unwrap();
-
-        LoRa::new(SX1261_2::new(BoardType::RpPicoWaveshareSx1262, spi, iv), true, Delay).await.unwrap()
+        LoRa::new(SX1261_2::new(BoardType::Stm32wlSx1262, spi, iv), true, Delay).await.unwrap()
     };
     let radio = LoraRadio(lora);
-    let rng = DeviceRng(RoscRng);
+    let rng = DeviceRng(Rng::new(p.RNG, Irqs));
     let timer = LoraTimer::new();
-    let non_volatile_store = DeviceNonVolatileStore::new(Flash::<_, Blocking, FLASH_SIZE>::new_blocking(p.FLASH));
+    let non_volatile_store =
+        DeviceNonVolatileStore::new(Flash::new_blocking(p.FLASH).into_blocking_regions().bank1_region);
     let uplink_subscriber = unwrap!(PACKET_BUS_UPLINK.dyn_subscriber());
     let loopback_publisher = unwrap!(PACKET_BUS_UPLINK.dyn_publisher());
     let downlink_publisher = unwrap!(PACKET_BUS_DOWNLINK.dyn_publisher());
@@ -98,7 +93,7 @@ async fn lorawan(p: Peripherals) {
     let app_eui: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
     let app_key: [u8; 16] =
         [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-    let class_mode = ClassMode::AC;
+    let class_mode = ClassMode::A;
 
     let hydrate_res: Result<(Configuration, Credentials), NonVolatileStoreError> =
         device.hydrate_from_non_volatile(app_eui, dev_eui, app_key);
@@ -120,7 +115,13 @@ async fn lorawan(p: Peripherals) {
 /// Within the Embassy embedded framework, set up a separate LoRaWAN task, then feed it data packets.
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let p = embassy_rp::init(Default::default());
+    let mut config = embassy_stm32::Config::default();
+    config.rcc.mux = embassy_stm32::rcc::ClockSrc::HSE32;
+    config.rcc.rtc_mux = embassy_stm32::rcc::RtcClockSource::LSI;
+    let p = embassy_stm32::init(config);
+
+    pac::RCC.ccipr().modify(|w| w.set_rngsel(0b01));
+
     let uplink_publisher = unwrap!(PACKET_BUS_UPLINK.dyn_publisher());
     let _downlink_subscriber = unwrap!(PACKET_BUS_DOWNLINK.dyn_subscriber());
 
@@ -136,26 +137,17 @@ async fn main(spawner: Spawner) {
 }
 
 /// Creation.
-pub fn new_device<'a, RK, DLY, T, M>(
+pub fn new_device<'a, RK, DLY>(
     radio: LoraRadio<RK, DLY>,
-    rng: DeviceRng,
+    rng: DeviceRng<'a>,
     timer: LoraTimer,
-    non_volatile_store: DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>,
+    non_volatile_store: DeviceNonVolatileStore<'a>,
     uplink_packet_queue: DevicePacketQueue,
     downlink_packet_queue: DevicePacketQueue,
-) -> LoraDevice<'a, RK, DLY, T, M>
+) -> LoraDevice<'a, RK, DLY>
 where
     RK: RadioKind,
     DLY: DelayUs,
-    T: Instance,
-    M: Mode,
 {
-    LoraDevice::<'a, RK, DLY, T, M>::new(
-        radio,
-        rng,
-        timer,
-        non_volatile_store,
-        uplink_packet_queue,
-        downlink_packet_queue,
-    )
+    LoraDevice::<'a, RK, DLY>::new(radio, rng, timer, non_volatile_store, uplink_packet_queue, downlink_packet_queue)
 }

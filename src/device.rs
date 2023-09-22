@@ -1,8 +1,9 @@
 use core::convert::Infallible;
-use core::usize;
 
-use embassy_rp::clocks::RoscRng;
-use embassy_rp::flash::{self, Flash, Instance, Mode};
+use embassy_stm32::flash::{Bank1Region, Blocking, MAX_ERASE_SIZE};
+use embassy_stm32::pac;
+use embassy_stm32::peripherals::RNG;
+use embassy_stm32::rng::Rng;
 use embassy_sync::pubsub::{DynPublisher, DynSubscriber, WaitResult};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_async::delay::DelayUs;
@@ -17,60 +18,50 @@ use postcard::{from_bytes, to_slice};
 use rand_core::RngCore;
 
 use crate::lora_radio::LoraRadio;
-use crate::FLASH_SIZE;
-
-const ERASE_SIZE: usize = 4096;
-const STORABLE_BUFFER_SIZE: usize = 256;
 
 extern "C" {
     static __storage: u8;
 }
 /// Provides the embedded framework/MCU/LoRa board-specific functionality required by the LoRaWAN layer, which remains
 /// agnostic to which embedded framework/MCU/LoRa board is used.
-pub struct LoraDevice<'a, RK, DLY, T, M>
+pub struct LoraDevice<'a, RK, DLY>
 where
     RK: RadioKind,
     DLY: DelayUs,
-    T: Instance,
-    M: Mode,
 {
     radio: LoraRadio<RK, DLY>,
-    rng: DeviceRng,
+    rng: DeviceRng<'a>,
     timer: LoraTimer,
-    non_volatile_store: DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>,
+    non_volatile_store: DeviceNonVolatileStore<'a>,
     uplink_packet_queue: DevicePacketQueue,
     downlink_packet_queue: DevicePacketQueue,
 }
-impl<'a, RK, DLY, T, M> LoraDevice<'a, RK, DLY, T, M>
+impl<'a, RK, DLY> LoraDevice<'a, RK, DLY>
 where
     RK: RadioKind,
     DLY: DelayUs,
-    T: Instance,
-    M: Mode,
 {
     pub fn new(
         radio: LoraRadio<RK, DLY>,
-        rng: DeviceRng,
+        rng: DeviceRng<'a>,
         timer: LoraTimer,
-        non_volatile_store: DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>,
+        non_volatile_store: DeviceNonVolatileStore<'a>,
         uplink_packet_queue: DevicePacketQueue,
         downlink_packet_queue: DevicePacketQueue,
-    ) -> LoraDevice<'a, RK, DLY, T, M> {
+    ) -> LoraDevice<'a, RK, DLY> {
         Self { radio, rng, timer, non_volatile_store, uplink_packet_queue, downlink_packet_queue }
     }
 }
 
-impl<'a, RK, DLY, T, M> Device for LoraDevice<'a, RK, DLY, T, M>
+impl<'a, RK, DLY> Device for LoraDevice<'a, RK, DLY>
 where
     RK: RadioKind,
     DLY: DelayUs,
-    T: Instance,
-    M: Mode,
 {
     type Radio = LoraRadio<RK, DLY>;
-    type Rng = DeviceRng;
+    type Rng = DeviceRng<'a>;
     type Timer = LoraTimer;
-    type NonVolatileStore = DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>;
+    type NonVolatileStore = DeviceNonVolatileStore<'a>;
     type PacketQueue = DevicePacketQueue;
 
     fn timer(&mut self) -> &mut Self::Timer {
@@ -120,25 +111,12 @@ where
     fn battery_level(&self) -> Option<f32> {
         None
     }
-
-    // TODO - if an 8 channel gateway is the only gateway available, determine which
-    // channel block (also known as sub-band) is supported and provide the index of that
-    // channel block here.  There are 10 8-channel channel blocks for the US915 region.
-    // If the second channel block is supported by the gateway, its zero-based index is 1.
-    //
-    // If the gateway network supports a range of join channels, this function may be removed
-    // to allow the default join channel selection to be used.
-    fn preferred_join_channel_block_index() -> usize {
-        1
-    }
 }
 
-impl<'a, RK, DLY, T, M> defmt::Format for LoraDevice<'a, RK, DLY, T, M>
+impl<'a, RK, DLY> defmt::Format for LoraDevice<'a, RK, DLY>
 where
     RK: RadioKind,
     DLY: DelayUs,
-    T: Instance,
-    M: Mode,
 {
     fn format(&self, fmt: defmt::Formatter<'_>) {
         defmt::write!(fmt, "LoraDevice")
@@ -146,9 +124,9 @@ where
 }
 
 /// Provides the embedded framework/MCU random number generation facility.
-pub struct DeviceRng(pub(crate) RoscRng);
+pub struct DeviceRng<'a>(pub(crate) Rng<'a, RNG>);
 
-impl lorawan::device::rng::Rng for DeviceRng {
+impl<'a> lorawan::device::rng::Rng for DeviceRng<'a> {
     type Error = Infallible;
 
     fn next_u32(&mut self) -> Result<u32, Self::Error> {
@@ -193,41 +171,29 @@ impl lorawan::device::timer::Timer for LoraTimer {
 /// Provides the embedded framework/MCU non-volatile storage facility to enable
 /// power-down/power-up operations for low battery usage when the LoRaWAN end device
 /// only needs to do sporadic transmissions from remote locations.
-pub struct DeviceNonVolatileStore<'a, T, M, const FS: usize>
-where
-    T: Instance,
-    M: Mode,
-{
-    flash: Flash<'a, T, M, FS>,
-    buf: [u8; STORABLE_BUFFER_SIZE],
+pub struct DeviceNonVolatileStore<'a> {
+    flash: Bank1Region<'a, Blocking>,
+    buf: [u8; 256],
 }
-impl<'a, T, M> DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>
-where
-    T: Instance,
-    M: Mode,
-{
-    pub fn new(flash: Flash<'a, T, M, FLASH_SIZE>) -> Self {
-        Self { flash, buf: [0xFF; STORABLE_BUFFER_SIZE] }
+impl<'a> DeviceNonVolatileStore<'a> {
+    pub fn new(flash: Bank1Region<'a, Blocking>) -> Self {
+        Self { flash, buf: [0xFF; 256] }
     }
     pub fn offset() -> u32 {
-        0x100000 // offset from the flash base, not a memory address
+        (unsafe { &__storage as *const u8 as u32 }) - pac::FLASH_BASE as u32
     }
 }
 #[derive(Debug, PartialEq, defmt::Format)]
 pub enum NonVolatileStoreError {
-    Flash(flash::Error),
+    Flash(embassy_stm32::flash::Error),
     Encoding,
 }
-impl<'a, T, M> NonVolatileStore for DeviceNonVolatileStore<'a, T, M, FLASH_SIZE>
-where
-    T: Instance,
-    M: Mode,
-{
+impl<'a> NonVolatileStore for DeviceNonVolatileStore<'a> {
     type Error = NonVolatileStoreError;
 
     fn save(&mut self, storable: Storable) -> Result<(), Self::Error> {
         self.flash
-            .blocking_erase(Self::offset(), Self::offset() + ERASE_SIZE as u32)
+            .blocking_erase(Self::offset(), Self::offset() + MAX_ERASE_SIZE as u32)
             .map_err(NonVolatileStoreError::Flash)?;
         to_slice(&storable, self.buf.as_mut_slice()).map_err(|_| NonVolatileStoreError::Encoding)?;
         self.flash.blocking_write(Self::offset(), &self.buf).map_err(NonVolatileStoreError::Flash)

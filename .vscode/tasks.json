@@ -6,7 +6,7 @@
 			"command": "build",
 			"args": [
 				"--target",
-				"thumbv6m-none-eabi"
+				"thumbv7em-none-eabi"
 			],
 			"problemMatcher": [
 				"$rustc"
