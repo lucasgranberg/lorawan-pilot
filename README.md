@@ -20,14 +20,14 @@ The Cargo.toml patch.crates-io specification includes lorawan and embassy reposi
 
 ### Code modifications needed
 
-- in your local lorawan-pilot clone, git checkout the ttn-us915-rp branch.
+- in your local lorawan-pilot clone, git checkout the ttn-us915-rp-task branch.
 - in main.rs, setup the LoRaRadio for your specific LoRa chip or board.
 - in main.rs, set the dev_eui, app_eui, and app_key configured for your device and gateway.
 - if using an 8 channel gateway without access to other gateways with additional channel support for the US915 fixed channel plan, consider setting a preferred channel block for the first join attempt in the device.rs preferred_join_channel_block_index() function.  The TTN gateway mentioned above uses the second channel block, indicated in the function as zero-based index 1.  The LoRaWAN implementation will attempt to join using a random channel from each channel block; preferred_join_channel_block_index() simply prioritizes the order of attempts.
 
 ### Suggested setup
 
-The following can all be run from your local lorawan-pilot folder, with the ttn-us915-rp branch checked out:
+The following can all be run from your local lorawan-pilot folder, with the ttn-us915-rp-task branch checked out:
 
 - rustup update (if needed)
 - cargo clean
