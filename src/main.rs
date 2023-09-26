@@ -31,7 +31,6 @@ use panic_reset as _;
 async fn main(_spawner: Spawner) {
     let mut config = embassy_stm32::Config::default();
     config.rcc.mux = embassy_stm32::rcc::ClockSrc::HSE32;
-    config.rcc.enable_lsi = true;
     let peripherals = embassy_stm32::init(config);
 
     pac::RCC.ccipr().modify(|w| w.set_rngsel(0b01));

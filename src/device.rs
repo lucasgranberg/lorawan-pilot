@@ -1,6 +1,6 @@
 use core::convert::Infallible;
 
-use embassy_lora::iv::{InterruptHandler, Stm32wlInterfaceVariant};
+use embassy_lora::iv::Stm32wlInterfaceVariant;
 use embassy_stm32::flash::{Bank1Region, Blocking, Flash, MAX_ERASE_SIZE};
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::peripherals::{PC4, RNG, SUBGHZSPI};
@@ -21,7 +21,8 @@ use crate::timer::LoraTimer;
 use rand_core::RngCore;
 
 bind_interrupts!(struct Irqs{
-    SUBGHZ_RADIO => InterruptHandler;
+    SUBGHZ_RADIO => embassy_lora::iv::InterruptHandler;
+    RNG => embassy_stm32::rng::InterruptHandler<RNG>;
 });
 
 extern "C" {
@@ -66,7 +67,7 @@ impl<'a> LoraDevice<'a> {
                 .bank1_region,
         );
         let ret = Self {
-            rng: DeviceRng(Rng::new(peripherals.RNG)),
+            rng: DeviceRng(Rng::new(peripherals.RNG, Irqs)),
             radio,
             timer: LoraTimer::new(),
             non_volatile_store,

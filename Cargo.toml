@@ -10,14 +10,9 @@ lorawan = { version = "0.1.0", git = "https://github.com/lucasgranberg/lorawan.g
     "defmt",
     "serde",
 ] }
-embassy-lora = { version = "0.1.0", git = "https://github.com/lucasgranberg/embassy.git", rev = "2fe352272ad56a6ca30d0b7940c2660af67137a7", features = [
-    "stm32wl",
-    "time",
-] }
-embassy-sync = { version = "0.2.0", git = "https://github.com/lucasgranberg/embassy.git", rev = "2fe352272ad56a6ca30d0b7940c2660af67137a7", features = [
-    "defmt",
-] }
-embassy-executor = { version = "0.2.0", git = "https://github.com/lucasgranberg/embassy.git", rev = "2fe352272ad56a6ca30d0b7940c2660af67137a7", features = [
+embassy-lora = { version = "0.1.0", features = ["stm32wl", "time"] }
+embassy-sync = { version = "0.3.0", features = ["defmt"] }
+embassy-executor = { version = "0.3.0", features = [
     "defmt",
     "integrated-timers",
     "arch-cortex-m",
@@ -25,14 +20,14 @@ embassy-executor = { version = "0.2.0", git = "https://github.com/lucasgranberg/
     "executor-interrupt",
     "nightly",
 ] }
-embassy-time = { version = "0.1.0", git = "https://github.com/lucasgranberg/embassy.git", rev = "2fe352272ad56a6ca30d0b7940c2660af67137a7", features = [
+embassy-time = { version = "0.1.0", features = [
     "defmt",
     "defmt-timestamp-uptime",
     "tick-hz-32_768",
     "unstable-traits",
     "nightly",
 ] }
-embassy-stm32 = { version = "0.1.0", git = "https://github.com/lucasgranberg/embassy.git", rev = "2fe352272ad56a6ca30d0b7940c2660af67137a7", features = [
+embassy-stm32 = { version = "0.1.0", features = [
     "nightly",
     "defmt",
     "time-driver-any",
@@ -42,9 +37,8 @@ embassy-stm32 = { version = "0.1.0", git = "https://github.com/lucasgranberg/emb
     "unstable-traits",
     "stm32wl55jc-cm4",
 ] }
-embassy-embedded-hal = { version = "0.1.0", git = "https://github.com/lucasgranberg/embassy.git", rev = "2fe352272ad56a6ca30d0b7940c2660af67137a7" }
-embassy-hal-common = { version = "0.1.0", git = "https://github.com/lucasgranberg/embassy.git", rev = "2fe352272ad56a6ca30d0b7940c2660af67137a7", default-features = false }
-embedded-hal-async = { version = "=0.2.0-alpha.2" }
+embassy-embedded-hal = { version = "0.1.0" }
+embedded-hal-async = { version = "1.0.0-alpha.11" }
 
 embedded-storage = { version = "0.3.0", default-features = false }
 
@@ -64,3 +58,11 @@ rand_core = { version = "0.6.2", default-features = false }
 lora-phy = { version = "2" }
 serde = { version = "1.0.163", default-features = false, features = ["derive"] }
 postcard = "1.0.4"
+
+[patch.crates-io]
+embassy-lora = { git = "https://github.com/embassy-rs/embassy.git", rev = "624f786203bbe7c6a96f5bdeca6e74c821223069" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy.git", rev = "624f786203bbe7c6a96f5bdeca6e74c821223069" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", rev = "624f786203bbe7c6a96f5bdeca6e74c821223069" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy.git", rev = "624f786203bbe7c6a96f5bdeca6e74c821223069" }
+embassy-stm32 = { git = "https://github.com/embassy-rs/embassy.git", rev = "624f786203bbe7c6a96f5bdeca6e74c821223069" }
+embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy.git", rev = "624f786203bbe7c6a96f5bdeca6e74c821223069" }
