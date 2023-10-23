@@ -4,6 +4,7 @@
 #![feature(type_alias_impl_trait)]
 #![deny(elided_lifetimes_in_paths)]
 #![feature(async_fn_in_trait)]
+#![feature(impl_trait_in_assoc_type)]
 
 use embassy_executor::Spawner;
 use embassy_stm32::pac;
@@ -12,6 +13,7 @@ use lorawan::device::radio::types::RxQuality;
 use lorawan::device::Device;
 
 mod device;
+mod iv;
 mod lora_radio;
 mod timer;
 
@@ -30,10 +32,12 @@ use panic_reset as _;
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let mut config = embassy_stm32::Config::default();
-    config.rcc.mux = embassy_stm32::rcc::ClockSrc::HSE32;
+    config.rcc.mux = embassy_stm32::rcc::ClockSrc::HSE;
     let peripherals = embassy_stm32::init(config);
 
-    pac::RCC.ccipr().modify(|w| w.set_rngsel(0b01));
+    pac::RCC
+        .ccipr()
+        .modify(|w| w.set_rngsel(pac::rcc::vals::Rngsel::MSI));
     let mut device = LoraDevice::new(peripherals).await;
     let mut radio_buffer = Default::default();
     let mut mac = get_mac(&mut device);

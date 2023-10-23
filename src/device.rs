@@ -1,9 +1,8 @@
 use core::convert::Infallible;
 
-use embassy_lora::iv::Stm32wlInterfaceVariant;
 use embassy_stm32::flash::{Bank1Region, Blocking, Flash, MAX_ERASE_SIZE};
-use embassy_stm32::gpio::{Level, Output, Speed};
-use embassy_stm32::peripherals::{PC4, RNG, SUBGHZSPI};
+use embassy_stm32::gpio::{AnyPin, Level, Output, Pin, Speed};
+use embassy_stm32::peripherals::{RNG, SUBGHZSPI};
 use embassy_stm32::rng::Rng;
 use embassy_stm32::spi::Spi;
 use embassy_stm32::{bind_interrupts, pac, Peripherals};
@@ -16,12 +15,13 @@ use lorawan::device::Device;
 use lorawan::mac::types::Storable;
 use postcard::{from_bytes, to_slice};
 
+use crate::iv::{InterruptHandler, Stm32wlInterfaceVariant};
 use crate::lora_radio::LoRaRadio;
 use crate::timer::LoraTimer;
 use rand_core::RngCore;
 
 bind_interrupts!(struct Irqs{
-    SUBGHZ_RADIO => embassy_lora::iv::InterruptHandler;
+    SUBGHZ_RADIO => InterruptHandler;
     RNG => embassy_stm32::rng::InterruptHandler<RNG>;
 });
 
@@ -37,7 +37,7 @@ pub struct LoraDevice<'d> {
 impl<'a> LoraDevice<'a> {
     pub async fn new(peripherals: Peripherals) -> LoraDevice<'a> {
         let lora: LoRa<
-            SX1261_2<Spi<'a, SUBGHZSPI, _, _>, Stm32wlInterfaceVariant<Output<'a, PC4>>>,
+            SX1261_2<Spi<'a, SUBGHZSPI, _, _>, Stm32wlInterfaceVariant<Output<'a, AnyPin>>>,
             Delay,
         > = {
             let spi = Spi::new_subghz(
@@ -48,7 +48,11 @@ impl<'a> LoraDevice<'a> {
             let iv = Stm32wlInterfaceVariant::new(
                 Irqs,
                 None,
-                Some(Output::new(peripherals.PC4, Level::Low, Speed::High)),
+                Some(Output::new(
+                    peripherals.PC4.degrade(),
+                    Level::Low,
+                    Speed::High,
+                )),
             )
             .unwrap();
 
@@ -120,7 +124,7 @@ impl<'m> NonVolatileStore for DeviceNonVolatileStore<'m> {
         self.flash
             .blocking_read(Self::offset(), &mut self.buf.as_mut_slice())
             .map_err(NonVolatileStoreError::Flash)?;
-        from_bytes(&self.buf.as_mut_slice()).map_err(|_| NonVolatileStoreError::Encoding)
+        from_bytes(self.buf.as_mut_slice()).map_err(|_| NonVolatileStoreError::Encoding)
     }
 }
 

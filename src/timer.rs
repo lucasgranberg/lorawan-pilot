@@ -14,7 +14,7 @@ impl LoraTimer {
     }
 }
 
-impl lorawan::device::timer::Timer for LoraTimer {
+impl ::lorawan::device::timer::Timer for LoraTimer {
     type Error = Infallible;
 
     fn reset(&mut self) {

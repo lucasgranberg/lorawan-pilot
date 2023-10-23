@@ -1,7 +1,12 @@
-use embassy_lora::iv::Stm32wlInterfaceVariant;
+// use super::radio::{
+//     Bandwidth, CodingRate, PhyRxTx, RfConfig, RxQuality, SpreadingFactor, TxConfig,
+// };
+// use super::region::constants::DEFAULT_DBM;
+// use super::Timings;
+
 use embassy_stm32::{
-    gpio::Output,
-    peripherals::{DMA1_CH2, DMA1_CH3, PC4, SUBGHZSPI},
+    gpio::{AnyPin, Output},
+    peripherals::{DMA1_CH2, DMA1_CH3, SUBGHZSPI},
     spi::Spi,
 };
 use embassy_time::Delay;
@@ -11,10 +16,15 @@ use lora_phy::LoRa;
 use lorawan::device::radio::types::{Bandwidth, CodingRate, RxQuality, SpreadingFactor};
 use lorawan::device::radio::Radio;
 
+use crate::iv::Stm32wlInterfaceVariant;
+
 /// LoRa radio using the physical layer API in the external lora-phy crate
 pub struct LoRaRadio<'d> {
     pub(crate) lora: LoRa<
-        SX1261_2<Spi<'d, SUBGHZSPI, DMA1_CH2, DMA1_CH3>, Stm32wlInterfaceVariant<Output<'d, PC4>>>,
+        SX1261_2<
+            Spi<'d, SUBGHZSPI, DMA1_CH2, DMA1_CH3>,
+            Stm32wlInterfaceVariant<Output<'d, AnyPin>>,
+        >,
         Delay,
     >,
 }
@@ -24,7 +34,7 @@ impl<'d> LoRaRadio<'d> {
         lora: LoRa<
             SX1261_2<
                 Spi<'d, SUBGHZSPI, DMA1_CH2, DMA1_CH3>,
-                Stm32wlInterfaceVariant<Output<'d, PC4>>,
+                Stm32wlInterfaceVariant<Output<'d, AnyPin>>,
             >,
             Delay,
         >,
