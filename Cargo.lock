@@ -668,6 +668,9 @@ name = "lora-modulation"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af2f1cca8a53465173c0cdbb74881dda927bbef1361de20a4189f5765553d83c"
+dependencies = [
+ "defmt",
+]
 
 [[package]]
 name = "lora-phy"
@@ -685,7 +688,7 @@ dependencies = [
 [[package]]
 name = "lorawan"
 version = "0.1.0"
-source = "git+https://github.com/lucasgranberg/lorawan.git?rev=fe31963699979a4a2b45bffdb54824757d9193f6#fe31963699979a4a2b45bffdb54824757d9193f6"
+source = "git+https://github.com/lucasgranberg/lorawan.git?rev=c9b0e028ee32af9e5ccd944c5db838576220ddec#c9b0e028ee32af9e5ccd944c5db838576220ddec"
 dependencies = [
  "aes",
  "as-slice",
@@ -694,6 +697,7 @@ dependencies = [
  "futures",
  "generic-array",
  "heapless",
+ "lora-modulation",
  "serde",
 ]
 
@@ -716,6 +720,7 @@ dependencies = [
  "embedded-storage",
  "futures",
  "heapless",
+ "lora-modulation",
  "lora-phy",
  "lorawan",
  "panic-probe",

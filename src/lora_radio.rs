@@ -13,7 +13,7 @@ use embassy_time::Delay;
 use lora_phy::mod_params::RadioError;
 use lora_phy::sx1261_2::SX1261_2;
 use lora_phy::LoRa;
-use lorawan::device::radio::types::{Bandwidth, CodingRate, RxQuality, SpreadingFactor};
+use lorawan::device::radio::types::RxQuality;
 use lorawan::device::radio::Radio;
 
 use crate::iv::Stm32wlInterfaceVariant;
@@ -52,28 +52,12 @@ impl<'d> Radio for LoRaRadio<'d> {
         config: lorawan::device::radio::types::TxConfig,
         buf: &[u8],
     ) -> Result<usize, <LoRaRadio<'d> as lorawan::device::radio::Radio>::Error> {
-        let sf = match config.rf.data_rate.spreading_factor {
-            SpreadingFactor::_7 => lora_phy::mod_params::SpreadingFactor::_7,
-            SpreadingFactor::_8 => lora_phy::mod_params::SpreadingFactor::_8,
-            SpreadingFactor::_9 => lora_phy::mod_params::SpreadingFactor::_9,
-            SpreadingFactor::_10 => lora_phy::mod_params::SpreadingFactor::_10,
-            SpreadingFactor::_11 => lora_phy::mod_params::SpreadingFactor::_11,
-            SpreadingFactor::_12 => lora_phy::mod_params::SpreadingFactor::_12,
-        };
-        let bw = match config.rf.data_rate.bandwidth {
-            Bandwidth::_125KHz => lora_phy::mod_params::Bandwidth::_125KHz,
-            Bandwidth::_250KHz => lora_phy::mod_params::Bandwidth::_250KHz,
-            Bandwidth::_500KHz => lora_phy::mod_params::Bandwidth::_500KHz,
-        };
-        let cr = match config.rf.coding_rate {
-            CodingRate::_4_5 => lora_phy::mod_params::CodingRate::_4_5,
-            CodingRate::_4_6 => lora_phy::mod_params::CodingRate::_4_6,
-            CodingRate::_4_7 => lora_phy::mod_params::CodingRate::_4_7,
-            CodingRate::_4_8 => lora_phy::mod_params::CodingRate::_4_8,
-        };
-        let mdltn_params = self
-            .lora
-            .create_modulation_params(sf, bw, cr, config.rf.frequency)?;
+        let mdltn_params = self.lora.create_modulation_params(
+            config.rf.data_rate.spreading_factor,
+            config.rf.data_rate.bandwidth,
+            config.rf.coding_rate,
+            config.rf.frequency,
+        )?;
         let mut tx_pkt_params =
             self.lora
                 .create_tx_packet_params(8, false, true, false, &mdltn_params)?;
@@ -96,28 +80,12 @@ impl<'d> Radio for LoRaRadio<'d> {
         (usize, lorawan::device::radio::types::RxQuality),
         <LoRaRadio<'d> as lorawan::device::radio::Radio>::Error,
     > {
-        let sf = match config.data_rate.spreading_factor {
-            SpreadingFactor::_7 => lora_phy::mod_params::SpreadingFactor::_7,
-            SpreadingFactor::_8 => lora_phy::mod_params::SpreadingFactor::_8,
-            SpreadingFactor::_9 => lora_phy::mod_params::SpreadingFactor::_9,
-            SpreadingFactor::_10 => lora_phy::mod_params::SpreadingFactor::_10,
-            SpreadingFactor::_11 => lora_phy::mod_params::SpreadingFactor::_11,
-            SpreadingFactor::_12 => lora_phy::mod_params::SpreadingFactor::_12,
-        };
-        let bw = match config.data_rate.bandwidth {
-            Bandwidth::_125KHz => lora_phy::mod_params::Bandwidth::_125KHz,
-            Bandwidth::_250KHz => lora_phy::mod_params::Bandwidth::_250KHz,
-            Bandwidth::_500KHz => lora_phy::mod_params::Bandwidth::_500KHz,
-        };
-        let cr = match config.coding_rate {
-            CodingRate::_4_5 => lora_phy::mod_params::CodingRate::_4_5,
-            CodingRate::_4_6 => lora_phy::mod_params::CodingRate::_4_6,
-            CodingRate::_4_7 => lora_phy::mod_params::CodingRate::_4_7,
-            CodingRate::_4_8 => lora_phy::mod_params::CodingRate::_4_8,
-        };
-        let mdltn_params = self
-            .lora
-            .create_modulation_params(sf, bw, cr, config.frequency)?;
+        let mdltn_params = self.lora.create_modulation_params(
+            config.data_rate.spreading_factor,
+            config.data_rate.bandwidth,
+            config.coding_rate,
+            config.frequency,
+        )?;
         let rx_pkt_params = self.lora.create_rx_packet_params(
             8,
             false,

@@ -6,10 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lorawan = { version = "0.1.0", git = "https://github.com/lucasgranberg/lorawan.git", rev = "fe31963699979a4a2b45bffdb54824757d9193f6", features = [
+lorawan = { version = "0.1.0", git = "https://github.com/lucasgranberg/lorawan.git", rev = "c9b0e028ee32af9e5ccd944c5db838576220ddec", features = [
     "defmt",
     "serde",
 ] }
+lora-modulation = { version = "0.1.3", features = ["defmt"] }
 
 embassy-sync = { version = "0.3.0", features = ["defmt"] }
 embassy-executor = { version = "0.3.0", features = [
