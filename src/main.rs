@@ -5,9 +5,11 @@
 #![deny(elided_lifetimes_in_paths)]
 #![feature(async_fn_in_trait)]
 #![feature(impl_trait_in_assoc_type)]
+#![feature(try_blocks)]
 
 use embassy_executor::Spawner;
 use embassy_stm32::pac;
+use embassy_stm32::time::Hertz;
 use embassy_time::Duration;
 use lorawan::device::radio::types::RxQuality;
 use lorawan::device::Device;
@@ -32,7 +34,23 @@ use panic_reset as _;
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let mut config = embassy_stm32::Config::default();
-    config.rcc.mux = embassy_stm32::rcc::ClockSrc::HSE;
+    {
+        use embassy_stm32::rcc::*;
+        config.rcc.hse = Some(Hse {
+            freq: Hertz(32_000_000),
+            mode: HseMode::Bypass,
+            prescaler: HsePrescaler::DIV1,
+        });
+        config.rcc.mux = ClockSrc::HSE;
+        // config.rcc.pll = Some(Pll {
+        //     source: PLLSource::HSE,
+        //     prediv: PllPreDiv::DIV2,
+        //     mul: PllMul::MUL6,
+        //     divp: None,
+        //     divq: Some(PllQDiv::DIV2), // PLL1_Q clock (32 / 2 * 6 / 2), used for RNG
+        //     divr: Some(PllRDiv::DIV2), // sysclk 48Mhz clock (32 / 2 * 6 / 2)
+        // });
+    }
     let peripherals = embassy_stm32::init(config);
 
     pac::RCC

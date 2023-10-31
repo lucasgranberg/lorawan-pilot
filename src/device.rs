@@ -1,22 +1,20 @@
 use core::convert::Infallible;
 
 use embassy_stm32::flash::{Bank1Region, Blocking, Flash, MAX_ERASE_SIZE};
-use embassy_stm32::gpio::{AnyPin, Level, Output, Pin, Speed};
-use embassy_stm32::peripherals::{RNG, SUBGHZSPI};
+use embassy_stm32::gpio::{Level, Output, Pin, Speed};
+use embassy_stm32::peripherals::RNG;
 use embassy_stm32::rng::Rng;
-use embassy_stm32::spi::Spi;
 use embassy_stm32::{bind_interrupts, pac, Peripherals};
 use embassy_time::Delay;
-use lora_phy::mod_params::BoardType;
-use lora_phy::sx1261_2::SX1261_2;
+use lora_phy::sx1261_2::{Sx126xVariant, SX1261_2};
 use lora_phy::LoRa;
 use lorawan::device::non_volatile_store::NonVolatileStore;
 use lorawan::device::Device;
 use lorawan::mac::types::Storable;
 use postcard::{from_bytes, to_slice};
 
-use crate::iv::{InterruptHandler, Stm32wlInterfaceVariant};
-use crate::lora_radio::LoRaRadio;
+use crate::iv::{InterruptHandler, Stm32wlInterfaceVariant, SubGhzSpiDevice};
+use crate::lora_radio::{LoRaRadio, LoraType};
 use crate::timer::LoraTimer;
 use rand_core::RngCore;
 
@@ -36,11 +34,8 @@ pub struct LoraDevice<'d> {
 }
 impl<'a> LoraDevice<'a> {
     pub async fn new(peripherals: Peripherals) -> LoraDevice<'a> {
-        let lora: LoRa<
-            SX1261_2<Spi<'a, SUBGHZSPI, _, _>, Stm32wlInterfaceVariant<Output<'a, AnyPin>>>,
-            Delay,
-        > = {
-            let spi = Spi::new_subghz(
+        let lora: LoraType<'a> = {
+            let spi = SubGhzSpiDevice::new(
                 peripherals.SUBGHZSPI,
                 peripherals.DMA1_CH2,
                 peripherals.DMA1_CH3,
@@ -57,7 +52,14 @@ impl<'a> LoraDevice<'a> {
             .unwrap();
 
             LoRa::new(
-                SX1261_2::new(BoardType::Stm32wlSx1262, spi, iv),
+                SX1261_2::new(
+                    spi,
+                    iv,
+                    lora_phy::sx1261_2::Config {
+                        chip: Sx126xVariant::Stm32wl,
+                        txco_ctrl: None,
+                    },
+                ),
                 true,
                 Delay,
             )

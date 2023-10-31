@@ -3,6 +3,9 @@ name = "lorawan-pilot"
 version = "0.1.0"
 edition = "2021"
 
+[profile.dev]
+debug = true
+opt-level = "z"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -12,7 +15,7 @@ lorawan = { version = "0.1.0", git = "https://github.com/lucasgranberg/lorawan.g
 ] }
 lora-modulation = { version = "0.1.3", features = ["defmt"] }
 
-embassy-sync = { version = "0.3.0", features = ["defmt"] }
+embassy-sync = { version = "0.4.0", features = ["defmt"] }
 embassy-executor = { version = "0.3.0", features = [
     "defmt",
     "integrated-timers",
@@ -62,15 +65,15 @@ futures = { version = "0.3.25", default-features = false, features = [
 ] }
 heapless = { version = "0.7.16", default-features = false }
 rand_core = { version = "0.6.2", default-features = false }
-lora-phy = { version = "2" }
+lora-phy = { git = "https://github.com/embassy-rs/lora-phy.git", rev = "375e5fada7801f880edbf0a105f681cf03c85c74" }
 serde = { version = "1.0.163", default-features = false, features = ["derive"] }
 postcard = "1.0.4"
 
 [patch.crates-io]
-embassy-sync = { git = "https://github.com/embassy-rs/embassy.git", rev = "e895ea2d8b34f6efd1c26c630cd9f84fd9fdacb6" }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", rev = "e895ea2d8b34f6efd1c26c630cd9f84fd9fdacb6" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy.git", rev = "e895ea2d8b34f6efd1c26c630cd9f84fd9fdacb6" }
-embassy-stm32 = { git = "https://github.com/embassy-rs/embassy.git", rev = "e895ea2d8b34f6efd1c26c630cd9f84fd9fdacb6" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy.git", rev = "e895ea2d8b34f6efd1c26c630cd9f84fd9fdacb6" }
-embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy.git", rev = "e895ea2d8b34f6efd1c26c630cd9f84fd9fdacb6" }
-embassy-hal-internal = { git = "https://github.com/embassy-rs/embassy.git", rev = "e895ea2d8b34f6efd1c26c630cd9f84fd9fdacb6" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy.git", rev = "3f74ff723533bdde3bff3be68a3b74bd858dc88e" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", rev = "3f74ff723533bdde3bff3be68a3b74bd858dc88e" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy.git", rev = "3f74ff723533bdde3bff3be68a3b74bd858dc88e" }
+embassy-stm32 = { git = "https://github.com/embassy-rs/embassy.git", rev = "3f74ff723533bdde3bff3be68a3b74bd858dc88e" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy.git", rev = "3f74ff723533bdde3bff3be68a3b74bd858dc88e" }
+embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy.git", rev = "3f74ff723533bdde3bff3be68a3b74bd858dc88e" }
+embassy-hal-internal = { git = "https://github.com/embassy-rs/embassy.git", rev = "3f74ff723533bdde3bff3be68a3b74bd858dc88e" }

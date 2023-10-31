@@ -6,8 +6,7 @@
 
 use embassy_stm32::{
     gpio::{AnyPin, Output},
-    peripherals::{DMA1_CH2, DMA1_CH3, SUBGHZSPI},
-    spi::Spi,
+    peripherals::{DMA1_CH2, DMA1_CH3},
 };
 use embassy_time::Delay;
 use lora_phy::mod_params::RadioError;
@@ -16,29 +15,20 @@ use lora_phy::LoRa;
 use lorawan::device::radio::types::RxQuality;
 use lorawan::device::radio::Radio;
 
-use crate::iv::Stm32wlInterfaceVariant;
+use crate::iv::{Stm32wlInterfaceVariant, SubGhzSpiDevice};
+
+pub type LoraType<'d> = LoRa<
+    SX1261_2<SubGhzSpiDevice<'d, DMA1_CH2, DMA1_CH3>, Stm32wlInterfaceVariant<Output<'d, AnyPin>>>,
+    Delay,
+>;
 
 /// LoRa radio using the physical layer API in the external lora-phy crate
 pub struct LoRaRadio<'d> {
-    pub(crate) lora: LoRa<
-        SX1261_2<
-            Spi<'d, SUBGHZSPI, DMA1_CH2, DMA1_CH3>,
-            Stm32wlInterfaceVariant<Output<'d, AnyPin>>,
-        >,
-        Delay,
-    >,
+    pub(crate) lora: LoraType<'d>,
 }
 
 impl<'d> LoRaRadio<'d> {
-    pub fn new(
-        lora: LoRa<
-            SX1261_2<
-                Spi<'d, SUBGHZSPI, DMA1_CH2, DMA1_CH3>,
-                Stm32wlInterfaceVariant<Output<'d, AnyPin>>,
-            >,
-            Delay,
-        >,
-    ) -> Self {
+    pub fn new(lora: LoraType<'d>) -> Self {
         Self { lora }
     }
 }
