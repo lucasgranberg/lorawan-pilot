@@ -124,7 +124,7 @@ impl<'m> NonVolatileStore for DeviceNonVolatileStore<'m> {
 
     fn load(&mut self) -> Result<Storable, Self::Error> {
         self.flash
-            .blocking_read(Self::offset(), &mut self.buf.as_mut_slice())
+            .blocking_read(Self::offset(), self.buf.as_mut_slice())
             .map_err(NonVolatileStoreError::Flash)?;
         from_bytes(self.buf.as_mut_slice()).map_err(|_| NonVolatileStoreError::Encoding)
     }

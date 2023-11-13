@@ -14,7 +14,6 @@ use embedded_hal::digital::OutputPin;
 use embedded_hal::spi::Operation;
 use embedded_hal_async::delay::DelayUs;
 use lora_phy::mod_params::RadioError;
-use lora_phy::mod_params::RadioError::*;
 use lora_phy::mod_traits::InterfaceVariant;
 
 /// Interrupt handler.
@@ -127,7 +126,7 @@ pub struct Stm32wlInterfaceVariant<CTRL> {
     rf_switch_tx: Option<CTRL>,
 }
 
-impl<'a, CTRL> Stm32wlInterfaceVariant<CTRL>
+impl<CTRL> Stm32wlInterfaceVariant<CTRL>
 where
     CTRL: OutputPin,
 {
@@ -167,31 +166,31 @@ where
 
     async fn enable_rf_switch_rx(&mut self) -> Result<(), RadioError> {
         match &mut self.rf_switch_tx {
-            Some(pin) => pin.set_low().map_err(|_| RfSwitchTx)?,
+            Some(pin) => pin.set_low().map_err(|_| RadioError::RfSwitchTx)?,
             None => (),
         };
         match &mut self.rf_switch_rx {
-            Some(pin) => pin.set_high().map_err(|_| RfSwitchRx),
+            Some(pin) => pin.set_high().map_err(|_| RadioError::RfSwitchRx),
             None => Ok(()),
         }
     }
     async fn enable_rf_switch_tx(&mut self) -> Result<(), RadioError> {
         match &mut self.rf_switch_rx {
-            Some(pin) => pin.set_low().map_err(|_| RfSwitchRx)?,
+            Some(pin) => pin.set_low().map_err(|_| RadioError::RfSwitchRx)?,
             None => (),
         };
         match &mut self.rf_switch_tx {
-            Some(pin) => pin.set_high().map_err(|_| RfSwitchTx),
+            Some(pin) => pin.set_high().map_err(|_| RadioError::RfSwitchTx),
             None => Ok(()),
         }
     }
     async fn disable_rf_switch(&mut self) -> Result<(), RadioError> {
         match &mut self.rf_switch_rx {
-            Some(pin) => pin.set_low().map_err(|_| RfSwitchRx)?,
+            Some(pin) => pin.set_low().map_err(|_| RadioError::RfSwitchRx)?,
             None => (),
         };
         match &mut self.rf_switch_tx {
-            Some(pin) => pin.set_low().map_err(|_| RfSwitchTx),
+            Some(pin) => pin.set_low().map_err(|_| RadioError::RfSwitchTx),
             None => Ok(()),
         }
     }
