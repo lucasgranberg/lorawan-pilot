@@ -65,15 +65,15 @@ futures = { version = "0.3.25", default-features = false, features = [
 ] }
 heapless = { version = "0.7.16", default-features = false }
 rand_core = { version = "0.6.2", default-features = false }
-lora-phy = { git = "https://github.com/embassy-rs/lora-phy.git", rev = "375e5fada7801f880edbf0a105f681cf03c85c74" }
+lora-phy = { git = "https://github.com/embassy-rs/lora-phy.git", rev = "9c7c81055f29ece955f9cfd911382c1b96d26395" }
 serde = { version = "1.0.163", default-features = false, features = ["derive"] }
 postcard = "1.0.4"
 
 [patch.crates-io]
-embassy-sync = { git = "https://github.com/embassy-rs/embassy.git", rev = "3f74ff723533bdde3bff3be68a3b74bd858dc88e" }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", rev = "3f74ff723533bdde3bff3be68a3b74bd858dc88e" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy.git", rev = "3f74ff723533bdde3bff3be68a3b74bd858dc88e" }
-embassy-stm32 = { git = "https://github.com/embassy-rs/embassy.git", rev = "3f74ff723533bdde3bff3be68a3b74bd858dc88e" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy.git", rev = "3f74ff723533bdde3bff3be68a3b74bd858dc88e" }
-embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy.git", rev = "3f74ff723533bdde3bff3be68a3b74bd858dc88e" }
-embassy-hal-internal = { git = "https://github.com/embassy-rs/embassy.git", rev = "3f74ff723533bdde3bff3be68a3b74bd858dc88e" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy.git", rev = "ac7134ed0d304282d2b10b1efff316426757fdab" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", rev = "ac7134ed0d304282d2b10b1efff316426757fdab" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy.git", rev = "ac7134ed0d304282d2b10b1efff316426757fdab" }
+embassy-stm32 = { git = "https://github.com/embassy-rs/embassy.git", rev = "ac7134ed0d304282d2b10b1efff316426757fdab" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy.git", rev = "ac7134ed0d304282d2b10b1efff316426757fdab" }
+embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy.git", rev = "ac7134ed0d304282d2b10b1efff316426757fdab" }
+embassy-hal-internal = { git = "https://github.com/embassy-rs/embassy.git", rev = "ac7134ed0d304282d2b10b1efff316426757fdab" }
