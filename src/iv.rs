@@ -10,14 +10,15 @@ use embassy_stm32::Peripheral;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 use embassy_sync::signal::Signal;
+use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::OutputPin;
 use embedded_hal::spi::Operation;
-use embedded_hal_async::delay::DelayUs;
 use lora_phy::mod_params::RadioError;
 use lora_phy::mod_traits::InterfaceVariant;
 
 /// Interrupt handler.
 
+/// Interrupt handler.
 pub struct InterruptHandler {}
 
 impl interrupt::typelevel::Handler<interrupt::typelevel::SUBGHZ_RADIO> for InterruptHandler {
@@ -99,17 +100,13 @@ where
                     Operation::Write(buf) => {
                         self.bus.write(buf).await.map_err(SpiDeviceError::Spi)?
                     }
-                    Operation::Transfer(read, write) => self
-                        .bus
-                        .transfer(read, write)
-                        .await
-                        .map_err(SpiDeviceError::Spi)?,
-                    Operation::TransferInPlace(buf) => self
-                        .bus
-                        .transfer_in_place(buf)
-                        .await
-                        .map_err(SpiDeviceError::Spi)?,
-                    Operation::DelayUs(us) => embassy_time::Timer::after_micros(*us as _).await,
+                    Operation::Transfer(read, write) => {
+                        self.bus.transfer(read, write).await.map_err(SpiDeviceError::Spi)?
+                    }
+                    Operation::TransferInPlace(buf) => {
+                        self.bus.transfer_in_place(buf).await.map_err(SpiDeviceError::Spi)?
+                    }
+                    Operation::DelayNs(ns) => embassy_time::Timer::after_nanos(*ns as _).await,
                 }
             }
         };
@@ -137,10 +134,7 @@ where
         rf_switch_tx: Option<CTRL>,
     ) -> Result<Self, RadioError> {
         interrupt::SUBGHZ_RADIO.disable();
-        Ok(Self {
-            rf_switch_rx,
-            rf_switch_tx,
-        })
+        Ok(Self { rf_switch_rx, rf_switch_tx })
     }
 }
 
@@ -148,11 +142,6 @@ impl<CTRL> InterfaceVariant for Stm32wlInterfaceVariant<CTRL>
 where
     CTRL: OutputPin,
 {
-    async fn reset(&mut self, _delay: &mut impl DelayUs) -> Result<(), RadioError> {
-        pac::RCC.csr().modify(|w| w.set_rfrst(true));
-        pac::RCC.csr().modify(|w| w.set_rfrst(false));
-        Ok(())
-    }
     async fn wait_on_busy(&mut self) -> Result<(), RadioError> {
         while pac::PWR.sr2().read().rfbusys() {}
         Ok(())
@@ -193,5 +182,11 @@ where
             Some(pin) => pin.set_low().map_err(|_| RadioError::RfSwitchTx),
             None => Ok(()),
         }
+    }
+
+    async fn reset(&mut self, _delay: &mut impl lora_phy::DelayNs) -> Result<(), RadioError> {
+        pac::RCC.csr().modify(|w| w.set_rfrst(true));
+        pac::RCC.csr().modify(|w| w.set_rfrst(false));
+        Ok(())
     }
 }

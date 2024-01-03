@@ -49,15 +49,10 @@ impl<'d> Radio for LoRaRadio<'d> {
             config.rf.frequency,
         )?;
         let mut tx_pkt_params =
-            self.lora
-                .create_tx_packet_params(8, false, true, false, &mdltn_params)?;
+            self.lora.create_tx_packet_params(8, false, true, false, &mdltn_params)?;
 
-        self.lora
-            .prepare_for_tx(&mdltn_params, config.pw.into(), false)
-            .await?;
-        self.lora
-            .tx(&mdltn_params, &mut tx_pkt_params, buf, 0xffffff)
-            .await?;
+        self.lora.prepare_for_tx(&mdltn_params, config.pw.into(), false).await?;
+        self.lora.tx(&mdltn_params, &mut tx_pkt_params, buf, 0xffffff).await?;
         Ok(0)
     }
 

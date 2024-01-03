@@ -8,9 +8,7 @@ pub struct LoraTimer {
 }
 impl LoraTimer {
     pub fn new() -> Self {
-        Self {
-            start: Instant::now(),
-        }
+        Self { start: Instant::now() }
     }
 }
 

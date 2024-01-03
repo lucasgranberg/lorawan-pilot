@@ -43,11 +43,7 @@ impl<'a> LoraDevice<'a> {
             let iv = Stm32wlInterfaceVariant::new(
                 Irqs,
                 None,
-                Some(Output::new(
-                    peripherals.PC4.degrade(),
-                    Level::Low,
-                    Speed::High,
-                )),
+                Some(Output::new(peripherals.PC4.degrade(), Level::Low, Speed::High)),
             )
             .unwrap();
 
@@ -57,7 +53,9 @@ impl<'a> LoraDevice<'a> {
                     iv,
                     lora_phy::sx1261_2::Config {
                         chip: Sx126xVariant::Stm32wl,
-                        txco_ctrl: None,
+                        tcxo_ctrl: None,
+                        use_dcdc: false,
+                        use_dio2_as_rfswitch: false,
                     },
                 ),
                 true,
@@ -68,9 +66,7 @@ impl<'a> LoraDevice<'a> {
         };
         let radio = LoRaRadio::new(lora);
         let non_volatile_store = DeviceNonVolatileStore::new(
-            Flash::new_blocking(peripherals.FLASH)
-                .into_blocking_regions()
-                .bank1_region,
+            Flash::new_blocking(peripherals.FLASH).into_blocking_regions().bank1_region,
         );
         let ret = Self {
             rng: DeviceRng(Rng::new(peripherals.RNG, Irqs)),
@@ -94,10 +90,7 @@ pub struct DeviceNonVolatileStore<'a> {
 }
 impl<'a> DeviceNonVolatileStore<'a> {
     pub fn new(flash: Bank1Region<'a, Blocking>) -> Self {
-        Self {
-            flash,
-            buf: [0xFF; 256],
-        }
+        Self { flash, buf: [0xFF; 256] }
     }
     pub fn offset() -> u32 {
         (unsafe { &__storage as *const u8 as u32 }) - pac::FLASH_BASE as u32
@@ -117,9 +110,7 @@ impl<'m> NonVolatileStore for DeviceNonVolatileStore<'m> {
             .map_err(NonVolatileStoreError::Flash)?;
         to_slice(&storable, self.buf.as_mut_slice())
             .map_err(|_| NonVolatileStoreError::Encoding)?;
-        self.flash
-            .blocking_write(Self::offset(), &self.buf)
-            .map_err(NonVolatileStoreError::Flash)
+        self.flash.blocking_write(Self::offset(), &self.buf).map_err(NonVolatileStoreError::Flash)
     }
 
     fn load(&mut self) -> Result<Storable, Self::Error> {
@@ -180,5 +171,25 @@ impl<'a> Device for LoraDevice<'a> {
 
     fn battery_level(&self) -> Option<f32> {
         None
+    }
+
+    fn min_frequency() -> Option<u32> {
+        None
+    }
+
+    fn max_frequency() -> Option<u32> {
+        None
+    }
+
+    fn min_data_rate() -> Option<lorawan::mac::types::DR> {
+        None
+    }
+
+    fn max_data_rate() -> Option<lorawan::mac::types::DR> {
+        None
+    }
+
+    fn preferred_join_channel_block_index() -> usize {
+        0
     }
 }

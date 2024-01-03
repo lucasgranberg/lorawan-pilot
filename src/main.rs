@@ -3,7 +3,6 @@
 #![macro_use]
 #![feature(type_alias_impl_trait)]
 #![deny(elided_lifetimes_in_paths)]
-#![feature(async_fn_in_trait)]
 #![feature(impl_trait_in_assoc_type)]
 #![feature(try_blocks)]
 
@@ -12,7 +11,6 @@ use embassy_stm32::pac;
 use embassy_stm32::time::Hertz;
 use embassy_time::Duration;
 use lorawan::device::radio::types::RxQuality;
-use lorawan::device::Device;
 
 mod device;
 mod iv;
@@ -53,9 +51,7 @@ async fn main(_spawner: Spawner) {
     }
     let peripherals = embassy_stm32::init(config);
 
-    pac::RCC
-        .ccipr()
-        .modify(|w| w.set_rngsel(pac::rcc::vals::Rngsel::MSI));
+    pac::RCC.ccipr().modify(|w| w.set_rngsel(pac::rcc::vals::Rngsel::MSI));
     let mut device = LoraDevice::new(peripherals).await;
     let mut radio_buffer = Default::default();
     let mut mac = get_mac(&mut device);
@@ -72,9 +68,8 @@ async fn main(_spawner: Spawner) {
         }
         'sending: while mac.is_joined() {
             defmt::info!("SENDING");
-            let send_res: Result<Option<(usize, RxQuality)>, _> = mac
-                .send(&mut device, &mut radio_buffer, b"PING", 1, false, None)
-                .await;
+            let send_res: Result<Option<(usize, RxQuality)>, _> =
+                mac.send(&mut device, &mut radio_buffer, b"PING", 1, false, None).await;
             match send_res {
                 Ok(res) => defmt::info!("{:?}", res),
                 Err(e) => {
@@ -109,14 +104,15 @@ pub fn get_mac(device: &mut LoraDevice<'static>) -> Mac<EU868, DynamicChannelPla
         dev_eui[1],
         dev_eui[0]
     );
-    let hydrate_res = device.hydrate_from_non_volatile(app_eui, dev_eui, app_key);
+
+    let hydrate_res = Mac::<EU868, DynamicChannelPlan<EU868>>::hydrate_from_non_volatile(
+        device, app_eui, dev_eui, app_key,
+    );
     match hydrate_res {
         Ok(_) => defmt::info!("credentials and configuration loaded from non volatile"),
         Err(_) => defmt::info!("credentials and configuration not found in non volatile"),
     };
-    let (configuration, credentials) = hydrate_res.unwrap_or((
-        Default::default(),
-        Credentials::new(app_eui, dev_eui, app_key),
-    ));
+    let (configuration, credentials) =
+        hydrate_res.unwrap_or((Default::default(), Credentials::new(app_eui, dev_eui, app_key)));
     Mac::new(configuration, credentials)
 }
