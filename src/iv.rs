@@ -2,23 +2,18 @@ use embassy_stm32::interrupt;
 
 use embassy_stm32::interrupt::InterruptExt;
 
-use embassy_stm32::pac;
-
-use embassy_stm32::peripherals::SUBGHZSPI;
-use embassy_stm32::spi;
-use embassy_stm32::Peripheral;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
+use embassy_stm32::pac;
 use embassy_sync::signal::Signal;
-use embedded_hal::delay::DelayNs;
+use embassy_time::Timer;
 use embedded_hal::digital::OutputPin;
+use embedded_hal::spi::ErrorType;
 use embedded_hal::spi::Operation;
+use embedded_hal_async::spi::SpiBus;
+use embedded_hal_async::spi::SpiDevice;
 use lora_phy::mod_params::RadioError;
 use lora_phy::mod_traits::InterfaceVariant;
-
-/// Interrupt handler.
-
-/// Interrupt handler.
 pub struct InterruptHandler {}
 
 impl interrupt::typelevel::Handler<interrupt::typelevel::SUBGHZ_RADIO> for InterruptHandler {
@@ -30,90 +25,50 @@ impl interrupt::typelevel::Handler<interrupt::typelevel::SUBGHZ_RADIO> for Inter
 
 static IRQ_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
-pub struct SubGhzSpiDevice<'d, Tx, Rx>
-where
-    Tx: spi::TxDma<SUBGHZSPI>,
-    Rx: spi::RxDma<SUBGHZSPI>,
-{
-    bus: spi::Spi<'d, SUBGHZSPI, Tx, Rx>,
+pub struct SubghzSpiDevice<T>(pub T);
+
+impl<T: SpiBus> ErrorType for SubghzSpiDevice<T> {
+    type Error = T::Error;
 }
 
-impl<'d, Tx, Rx> SubGhzSpiDevice<'d, Tx, Rx>
-where
-    Tx: spi::TxDma<SUBGHZSPI>,
-    Rx: spi::RxDma<SUBGHZSPI>,
-{
-    pub fn new(
-        spi: impl Peripheral<P = SUBGHZSPI> + 'd,
-        txdma: impl Peripheral<P = Tx> + 'd,
-        rxdma: impl Peripheral<P = Rx> + 'd,
-    ) -> Self {
-        let bus = spi::Spi::new_subghz(spi, txdma, rxdma);
-        Self { bus }
-    }
-}
-/// Error returned by SPI device implementations in this crate.
-#[derive(Eq, PartialEq, Debug)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[non_exhaustive]
-pub enum SpiDeviceError {
-    /// An operation on the inner SPI bus failed.
-    Spi(spi::Error),
-    /// DelayUs operations are not supported when the `time` Cargo feature is not enabled.
-    DelayUsNotSupported,
-}
-
-impl embedded_hal_async::spi::Error for SpiDeviceError {
-    fn kind(&self) -> embedded_hal_async::spi::ErrorKind {
-        match self {
-            Self::Spi(e) => e.kind(),
-            Self::DelayUsNotSupported => embedded_hal_async::spi::ErrorKind::Other,
-        }
-    }
-}
-
-impl<Tx, Rx> embedded_hal_async::spi::ErrorType for SubGhzSpiDevice<'_, Tx, Rx>
-where
-    Tx: spi::TxDma<SUBGHZSPI>,
-    Rx: spi::RxDma<SUBGHZSPI>,
-{
-    type Error = SpiDeviceError;
-}
-
-impl<Tx, Rx> embedded_hal_async::spi::SpiDevice for SubGhzSpiDevice<'_, Tx, Rx>
-where
-    Tx: spi::TxDma<SUBGHZSPI>,
-    Rx: spi::RxDma<SUBGHZSPI>,
-{
+impl<T: SpiBus> SpiDevice for SubghzSpiDevice<T> {
     async fn transaction(
         &mut self,
         operations: &mut [Operation<'_, u8>],
     ) -> Result<(), Self::Error> {
         pac::PWR.subghzspicr().modify(|w| w.set_nss(false));
 
-        let op_res: Result<(), Self::Error> = try {
+        let op_res = 'ops: {
             for op in operations {
-                match op {
-                    Operation::Read(buf) => {
-                        self.bus.read(buf).await.map_err(SpiDeviceError::Spi)?
-                    }
-                    Operation::Write(buf) => {
-                        self.bus.write(buf).await.map_err(SpiDeviceError::Spi)?
-                    }
-                    Operation::Transfer(read, write) => {
-                        self.bus.transfer(read, write).await.map_err(SpiDeviceError::Spi)?
-                    }
-                    Operation::TransferInPlace(buf) => {
-                        self.bus.transfer_in_place(buf).await.map_err(SpiDeviceError::Spi)?
-                    }
-                    Operation::DelayNs(ns) => embassy_time::Timer::after_nanos(*ns as _).await,
+                let res = match op {
+                    Operation::Read(buf) => self.0.read(buf).await,
+                    Operation::Write(buf) => self.0.write(buf).await,
+                    Operation::Transfer(read, write) => self.0.transfer(read, write).await,
+                    Operation::TransferInPlace(buf) => self.0.transfer_in_place(buf).await,
+                    Operation::DelayNs(ns) => match self.0.flush().await {
+                        Err(e) => Err(e),
+                        Ok(()) => {
+                            Timer::after_nanos((*ns) as u64).await;
+                            Ok(())
+                        }
+                    },
+                };
+                if let Err(e) = res {
+                    break 'ops Err(e);
                 }
             }
+            Ok(())
         };
+
+        // On failure, it's important to still flush and deassert CS.
+        let flush_res = self.0.flush().await;
 
         pac::PWR.subghzspicr().modify(|w| w.set_nss(true));
 
-        op_res
+        op_res?;
+        flush_res?;
+
+        Ok(())
     }
 }
 
@@ -154,34 +109,31 @@ where
     }
 
     async fn enable_rf_switch_rx(&mut self) -> Result<(), RadioError> {
-        match &mut self.rf_switch_tx {
-            Some(pin) => pin.set_low().map_err(|_| RadioError::RfSwitchTx)?,
-            None => (),
-        };
-        match &mut self.rf_switch_rx {
-            Some(pin) => pin.set_high().map_err(|_| RadioError::RfSwitchRx),
-            None => Ok(()),
+        if let Some(pin) = &mut self.rf_switch_tx {
+            pin.set_low().map_err(|_| RadioError::RfSwitchRx)?
         }
+        if let Some(pin) = &mut self.rf_switch_rx {
+            pin.set_high().map_err(|_| RadioError::RfSwitchTx)?
+        }
+        Ok(())
     }
     async fn enable_rf_switch_tx(&mut self) -> Result<(), RadioError> {
-        match &mut self.rf_switch_rx {
-            Some(pin) => pin.set_low().map_err(|_| RadioError::RfSwitchRx)?,
-            None => (),
-        };
-        match &mut self.rf_switch_tx {
-            Some(pin) => pin.set_high().map_err(|_| RadioError::RfSwitchTx),
-            None => Ok(()),
+        if let Some(pin) = &mut self.rf_switch_rx {
+            pin.set_low().map_err(|_| RadioError::RfSwitchRx)?
         }
+        if let Some(pin) = &mut self.rf_switch_tx {
+            pin.set_high().map_err(|_| RadioError::RfSwitchTx)?
+        }
+        Ok(())
     }
     async fn disable_rf_switch(&mut self) -> Result<(), RadioError> {
-        match &mut self.rf_switch_rx {
-            Some(pin) => pin.set_low().map_err(|_| RadioError::RfSwitchRx)?,
-            None => (),
-        };
-        match &mut self.rf_switch_tx {
-            Some(pin) => pin.set_low().map_err(|_| RadioError::RfSwitchTx),
-            None => Ok(()),
+        if let Some(pin) = &mut self.rf_switch_rx {
+            pin.set_low().map_err(|_| RadioError::RfSwitchRx)?
         }
+        if let Some(pin) = &mut self.rf_switch_tx {
+            pin.set_low().map_err(|_| RadioError::RfSwitchTx)?
+        }
+        Ok(())
     }
 
     async fn reset(&mut self, _delay: &mut impl lora_phy::DelayNs) -> Result<(), RadioError> {

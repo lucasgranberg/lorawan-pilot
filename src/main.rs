@@ -10,7 +10,6 @@ use embassy_executor::Spawner;
 use embassy_stm32::pac;
 use embassy_stm32::time::Hertz;
 use embassy_time::Duration;
-use lorawan::device::radio::types::RxQuality;
 
 mod device;
 mod iv;
@@ -19,6 +18,7 @@ mod timer;
 
 use defmt_rtt as _;
 use device::*;
+use lorawan::device::Device;
 use lorawan::mac::region::channel_plan::dynamic::DynamicChannelPlan;
 use lorawan::mac::region::eu868::EU868;
 use lorawan::mac::types::Credentials;
@@ -39,7 +39,7 @@ async fn main(_spawner: Spawner) {
             mode: HseMode::Bypass,
             prescaler: HsePrescaler::DIV1,
         });
-        config.rcc.mux = ClockSrc::HSE;
+        // config.rcc.mux = ClockSource::HSE;
         // config.rcc.pll = Some(Pll {
         //     source: PLLSource::HSE,
         //     prediv: PllPreDiv::DIV2,
@@ -68,10 +68,12 @@ async fn main(_spawner: Spawner) {
         }
         'sending: while mac.is_joined() {
             defmt::info!("SENDING");
-            let send_res: Result<Option<(usize, RxQuality)>, _> =
-                mac.send(&mut device, &mut radio_buffer, b"PING", 1, false, None).await;
+            let send_res = mac.send(&mut device, &mut radio_buffer, b"PING", 1, false, None).await;
             match send_res {
-                Ok(res) => defmt::info!("{:?}", res),
+                Ok(Some((len, status))) => {
+                    defmt::info!("Sent: Rx len: {} RSSI: {} SNR:{}", len, status.rssi, status.snr)
+                }
+                Ok(None) => defmt::info!("Sent: no downlink"),
                 Err(e) => {
                     defmt::error!("{:?}", e);
                     if let lorawan::Error::Mac(lorawan::mac::Error::SessionExpired) = e {
@@ -105,9 +107,7 @@ pub fn get_mac(device: &mut LoraDevice<'static>) -> Mac<EU868, DynamicChannelPla
         dev_eui[0]
     );
 
-    let hydrate_res = Mac::<EU868, DynamicChannelPlan<EU868>>::hydrate_from_non_volatile(
-        device, app_eui, dev_eui, app_key,
-    );
+    let hydrate_res = device.hydrate_from_non_volatile(app_eui, dev_eui, app_key);
     match hydrate_res {
         Ok(_) => defmt::info!("credentials and configuration loaded from non volatile"),
         Err(_) => defmt::info!("credentials and configuration not found in non volatile"),
